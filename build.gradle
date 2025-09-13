@@ -26,6 +26,7 @@ repositories {
 dependencies {
     // Spring Web
     implementation("org.springframework.boot:spring-boot-starter-web")
+    implementation 'org.springframework.boot:spring-boot-starter-validation'
     // Spring for Apache Kafka
     implementation("org.springframework.kafka:spring-kafka")
     // Jsoup for HTML Parsing
