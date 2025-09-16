@@ -5,8 +5,8 @@ import com.example.capstone_java.crawling.domain.vo.DomainUrl;
 
 import java.util.UUID;
 
-public record UrlDiscoveredEvent(UUID jobId, String url) {
-    public UrlDiscoveredEvent(CrawlJobId crawlJobId, DomainUrl domainUrl) {
+public record UrlFetchEvent(UUID jobId, String url) {
+    public UrlFetchEvent(CrawlJobId crawlJobId, DomainUrl domainUrl) {
         this(crawlJobId.getUuid(), domainUrl.url());
     }
 }

@@ -3,6 +3,7 @@ package com.example.capstone_java.crawling.domain.vo;
 import java.net.MalformedURLException;
 import java.net.URL;
 
+
 public record DomainUrl(String url) {
     /**
      * record의 Compact Constructor입니다.
