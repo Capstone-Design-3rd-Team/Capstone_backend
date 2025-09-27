@@ -31,6 +31,11 @@ dependencies {
     implementation("org.springframework.kafka:spring-kafka")
     // Jsoup for HTML Parsing
     implementation("org.jsoup:jsoup:1.17.2")
+    // Rate limiter
+    implementation 'com.google.guava:guava:33.0.0-jre'
+    // jsoup html 파서
+    implementation 'org.jsoup:jsoup:1.17.2'
+
     // Test
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testImplementation("org.springframework.kafka:spring-kafka-test")
