@@ -1,5 +1,6 @@
 package com.example.capstone_java.website.adapter.in.kafka;
 
+import com.example.capstone_java.website.application.port.in.usecase.CrawlUrlsUseCase;
 import com.example.capstone_java.website.domain.event.ExtractionStartedEvent;
 import com.example.capstone_java.website.global.common.KafkaFactories;
 import com.example.capstone_java.website.global.common.KafkaGroups;

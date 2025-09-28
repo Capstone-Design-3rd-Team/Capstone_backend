@@ -24,7 +24,7 @@ public class CommandWebsiteService implements ExtractUrlsUseCase {
         // 진행 상태로 저장
         Website savedWebsite = saveWebsitePort.save(website);
 
-        ExtractionStartedEvent extractionStartedEvent = new ExtractionStartedEvent(savedWebsite.getWebsiteId());
+        ExtractionStartedEvent extractionStartedEvent = ExtractionStartedEvent.of(savedWebsite.getWebsiteId(), savedWebsite.getMainUrl());
         publishEventPort.publish(extractionStartedEvent);
 
         return savedWebsite.getWebsiteId();

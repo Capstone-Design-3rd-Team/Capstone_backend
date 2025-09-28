@@ -19,7 +19,7 @@ public class WebsiteEntity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long websiteId;
 
-    @Column(nullable = false)
+    @Column(nullable = false, length = 2048)
     private String mainUrl;
 
     @Enumerated(EnumType.STRING)
@@ -29,4 +29,3 @@ public class WebsiteEntity {
     @Column(nullable = false)
     private LocalDateTime createdAt;
 }
-
