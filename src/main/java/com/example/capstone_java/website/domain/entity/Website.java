@@ -10,13 +10,14 @@ public final class Website {
     private final WebsiteId websiteId;
     private final String mainUrl;
     private final ExtractionStatus extractionStatus;
-    private final LocalDateTime creationDateTime;
+    private final LocalDateTime createdAt;
 
-    private Website(final WebsiteId websiteId, final String mainUrl, ExtractionStatus extractionStatus,  final LocalDateTime creationDateTime) {
+    // MapStruct용 public 생성자 (하나만 유지)
+    public Website(WebsiteId websiteId, String mainUrl, ExtractionStatus extractionStatus, LocalDateTime createdAt) {
         this.websiteId = websiteId;
         this.mainUrl = mainUrl;
         this.extractionStatus = extractionStatus;
-        this.creationDateTime = creationDateTime;
+        this.createdAt = createdAt;
     }
 
     public static Website create(final String mainUrl) {
@@ -35,15 +36,15 @@ public final class Website {
         if (this.extractionStatus != ExtractionStatus.PENDING) {
             throw new IllegalStateException("추출이 이미 시작되었습니다.");
         }
-        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.PROGRESS, this.creationDateTime);
+        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.PROGRESS, this.createdAt);
     }
 
     public Website markCompleted() {
-        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.COMPLETE, this.creationDateTime);
+        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.COMPLETE, this.createdAt);
     }
 
     public Website markFailed() {
-        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.FAILED, this.creationDateTime);
+        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.FAILED, this.createdAt);
     }
 
     public boolean isCompleted() {

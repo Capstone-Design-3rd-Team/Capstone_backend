@@ -22,7 +22,7 @@ public class QueryWebsiteService implements GetWebsiteUseCase {
                        website.getWebsiteId(),
                        website.getMainUrl(),
                        website.getExtractionStatus(),
-                       website.getCreationDateTime()
+                       website.getCreatedAt()
                ))
                .orElseThrow(() -> new IllegalArgumentException("Website id not found"));
 
