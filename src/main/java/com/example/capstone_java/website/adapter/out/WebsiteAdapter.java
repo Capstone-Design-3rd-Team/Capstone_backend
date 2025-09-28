@@ -1,4 +1,4 @@
-package com.example.capstone_java.website.adapter.out.persistence;
+package com.example.capstone_java.website.adapter.out;
 
 import com.example.capstone_java.website.adapter.out.mapper.WebsiteMapper;
 import com.example.capstone_java.website.adapter.out.persistence.entity.WebsiteEntity;
