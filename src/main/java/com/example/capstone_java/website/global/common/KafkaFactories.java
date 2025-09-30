@@ -3,6 +3,7 @@ package com.example.capstone_java.website.global.common;
 public final class KafkaFactories {
     public static final String EXTRACTION_LISTENER_CONTAINER_FACTORY = "extractionListenerContainerFactory";
     public static final String URL_PROCESSING_LISTENER_CONTAINER_FACTORY = "urlProcessingListenerContainerFactory";
+    public static final String JOB_UPDATING_LISTENER_CONTAINER_FACTORY = "jobUpdatingListenerContainerFactory";
     public static final String AI_RESULT_LISTENER_CONTAINER_FACTORY = "aiResultListenerContainerFactory";
     public static final String FAILURE_LISTENER_CONTAINER_FACTORY = "failureListenerContainerFactory";
     public static final String DEFAULT_KAFKA_LISTENER_CONTAINER_FACTORY = "kafkaListenerContainerFactory";

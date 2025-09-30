@@ -5,7 +5,7 @@ import com.example.capstone_java.website.application.port.out.SaveWebsitePort;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.event.ExtractionStartedEvent;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
-import com.example.capstone_java.website.global.common.PublishEventPort;
+import com.example.capstone_java.website.application.event.EventDispatcher;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,7 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class CommandWebsiteService implements ExtractUrlsUseCase {
 
     private final SaveWebsitePort saveWebsitePort;
-    private final PublishEventPort publishEventPort;
+    private final EventDispatcher eventDispatcher;
 
     @Override
     @Transactional
@@ -25,7 +25,7 @@ public class CommandWebsiteService implements ExtractUrlsUseCase {
         Website savedWebsite = saveWebsitePort.save(website);
 
         ExtractionStartedEvent extractionStartedEvent = ExtractionStartedEvent.of(savedWebsite.getWebsiteId(), savedWebsite.getMainUrl());
-        publishEventPort.publish(extractionStartedEvent);
+        eventDispatcher.dispatch(extractionStartedEvent);
 
         return savedWebsite.getWebsiteId();
     }

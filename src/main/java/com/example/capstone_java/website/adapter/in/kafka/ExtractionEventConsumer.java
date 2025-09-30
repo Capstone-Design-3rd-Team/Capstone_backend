@@ -1,11 +1,13 @@
 package com.example.capstone_java.website.adapter.in.kafka;
 
-import com.example.capstone_java.website.application.port.in.usecase.CrawlUrlsUseCase;
+import com.example.capstone_java.website.application.port.out.GetWebsitePort;
+import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.event.ExtractionStartedEvent;
+import com.example.capstone_java.website.domain.event.UrlCrawlEvent;
 import com.example.capstone_java.website.global.common.KafkaFactories;
 import com.example.capstone_java.website.global.common.KafkaGroups;
 import com.example.capstone_java.website.global.common.KafkaTopics;
-import jakarta.servlet.annotation.HandlesTypes;
+import com.example.capstone_java.website.application.event.EventDispatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -22,7 +24,8 @@ import org.springframework.stereotype.Component;
 @RequiredArgsConstructor
 public class ExtractionEventConsumer {
 
-    private final CrawlUrlsUseCase crawlUrlsUseCase;
+    private final GetWebsitePort getWebsitePort;
+    private final EventDispatcher eventDispatcher;
 
     @RetryableTopic(
         attempts = "3",
@@ -45,8 +48,28 @@ public class ExtractionEventConsumer {
         try {
             log.info("웹사이트 추출 시작 - Topic: {}, WebsiteId: {}, MainUrl: {}, Partition: {}, Offset: {}",
                     topic, event.websiteId().getId(), event.mainUrl(), partition, offset);
-            crawlUrlsUseCase.startCrawling(event.websiteId(), event.mainUrl());
+
+            // Website에서 크롤링 설정 조회
+            Website website = getWebsitePort.findById(event.websiteId())
+                    .orElseThrow(() -> new IllegalStateException("Website 도메인을 찾을 수 없습니다"));
+
+            // 도메인 로직으로 크롤링 가능 여부 확인
+            if (!website.canStartCrawling()) {
+                log.warn("크롤링을 시작할 수 없는 상태 - WebsiteId: {}, Status: {}",
+                        event.websiteId().getId(), website.getExtractionStatus());
+                acknowledgment.acknowledge();
+                return;
+            }
+
+            // 도메인 메서드로 루트 크롤링 이벤트 생성
+            UrlCrawlEvent rootCrawlEvent = website.createRootCrawlEvent();
+
+            eventDispatcher.dispatch(rootCrawlEvent);
             acknowledgment.acknowledge();
+
+            log.info("루트 URL 크롤링 이벤트 발행 완료 - WebsiteId: {}, MaxDepth: {}",
+                    event.websiteId().getId(), website.getCrawlConfig().maxDepth());
+
         } catch (IllegalArgumentException e) {
             log.error("잘못된 요청 - WebsiteId: {}, MainUrl: {}, Error: {}",
                     event.websiteId().getId(), event.mainUrl(), e.getMessage());
