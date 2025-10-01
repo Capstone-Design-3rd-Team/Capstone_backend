@@ -29,12 +29,4 @@ public record UrlCrawlEvent(
     public String getPartitionKey() {
         return websiteId != null ? websiteId.getId().toString() : "default";
     }
-
-    public boolean hasReachedMaxDepth() {
-        return depth >= maxDepth;
-    }
-
-    public boolean isRootUrl() {
-        return parentUrl == null && depth == 0;
-    }
 }
