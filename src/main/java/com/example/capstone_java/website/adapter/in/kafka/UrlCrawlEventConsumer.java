@@ -2,7 +2,6 @@ package com.example.capstone_java.website.adapter.in.kafka;
 
 import com.example.capstone_java.website.application.service.CrawlExecutionService;
 import com.example.capstone_java.website.domain.event.UrlCrawlEvent;
-import com.example.capstone_java.website.global.common.KafkaFactories;
 import com.example.capstone_java.website.global.common.KafkaGroups;
 import com.example.capstone_java.website.global.common.KafkaTopics;
 import lombok.RequiredArgsConstructor;
@@ -25,13 +24,13 @@ public class UrlCrawlEventConsumer {
 
     @RetryableTopic(
         attempts = "3",
-        backoff = @Backoff(delay = 2000, multiplier = 2.0),
+        backoff = @Backoff(delay = 1000, multiplier = 2.0),
         dltTopicSuffix = ".dlt"
     )
     @KafkaListener(
         topics = KafkaTopics.URL_CRAWL_EVENTS,
         groupId = KafkaGroups.URL_PROCESSING_GROUP,
-        containerFactory = KafkaFactories.URL_PROCESSING_LISTENER_CONTAINER_FACTORY
+        concurrency = "20"  // 20개 스레드로 병렬 처리
     )
     public void handleUrlCrawlEvent(
         @Payload UrlCrawlEvent event,
@@ -41,8 +40,8 @@ public class UrlCrawlEventConsumer {
         Acknowledgment acknowledgment
     ) {
         try {
-            log.info("URL 크롤링 이벤트 수신 - Topic: {}, WebsiteId: {}, URL: {}, Depth: {}/{}, Partition: {}, Offset: {}",
-                    topic, event.websiteId().getId(), event.url(), event.depth(), event.maxDepth(), partition, offset);
+            log.info("URL 크롤링 이벤트 수신 - Topic: {}, WebsiteId: {}, URL: {}, Depth: {}, Partition: {}, Offset: {}",
+                    topic, event.websiteId().getId(), event.url(), event.depth(), partition, offset);
 
             // 도메인 로직 중심의 크롤링 실행
             crawlExecutionService.executeCrawl(event);
