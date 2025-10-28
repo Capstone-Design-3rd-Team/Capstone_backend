@@ -28,6 +28,9 @@ public class JsoupAdapter implements JsoupPort {
         try {
             log.info("크롤링 시작: {}", url);
 
+            // 메인 URL의 도메인 추출
+            String mainDomain = extractDomain(url);
+
             // Jsoup으로 HTML 문서 가져오기
             Document document = Jsoup.connect(url)
                     .userAgent(USER_AGENT)
@@ -44,12 +47,12 @@ public class JsoupAdapter implements JsoupPort {
             for (Element link : linkElements) {
                 String href = link.attr("abs:href"); // 절대 URL로 변환
 
-                if (isValidUrl(href)) {
+                if (isValidUrl(href) && isSameDomain(href, mainDomain)) {
                     validUrls.add(href);
                 }
             }
 
-            log.info("유효한 URL 수: {}", validUrls.size());
+            log.info("유효한 URL 수 (같은 도메인만): {}", validUrls.size());
 
         } catch (IOException e) {
             log.error("URL 크롤링 실패: {}, 오류: {}", url, e.getMessage());
@@ -57,6 +60,30 @@ public class JsoupAdapter implements JsoupPort {
         }
 
         return validUrls;
+    }
+
+    /**
+     * URL에서 도메인 추출
+     */
+    private String extractDomain(String url) {
+        try {
+            URL parsedUrl = new URL(url);
+            return parsedUrl.getHost();
+        } catch (MalformedURLException e) {
+            return "";
+        }
+    }
+
+    /**
+     * 같은 도메인인지 확인
+     */
+    private boolean isSameDomain(String url, String targetDomain) {
+        try {
+            URL parsedUrl = new URL(url);
+            return parsedUrl.getHost().equals(targetDomain);
+        } catch (MalformedURLException e) {
+            return false;
+        }
     }
 
     /**
@@ -81,6 +108,11 @@ public class JsoupAdapter implements JsoupPort {
 
             // 호스트가 존재해야 함
             if (host == null || host.trim().isEmpty()) {
+                return false;
+            }
+
+            // 앵커 링크(#) 필터링
+            if (url.contains("#")) {
                 return false;
             }
 
