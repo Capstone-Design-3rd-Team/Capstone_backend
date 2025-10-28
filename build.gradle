@@ -35,8 +35,11 @@ dependencies {
     // Redis for caching
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
 
-    // Jsoup for HTML Parsing
+    // Jsoup for HTML Parsing (정적 사이트용)
     implementation("org.jsoup:jsoup:1.17.2")
+
+    // Playwright for Dynamic Crawling (SPA 사이트용)
+    implementation 'com.microsoft.playwright:playwright:1.40.0'
 
     // Rate limiter
     implementation 'com.google.guava:guava:33.0.0-jre'
@@ -47,6 +50,8 @@ dependencies {
     // Lombok
     compileOnly 'org.projectlombok:lombok'
     annotationProcessor 'org.projectlombok:lombok'
+    testCompileOnly 'org.projectlombok:lombok'              // 테스트용 추가
+    testAnnotationProcessor 'org.projectlombok:lombok'      // 테스트용 추가
 
     // MapStruct
     implementation 'org.mapstruct:mapstruct:1.5.5.Final'
