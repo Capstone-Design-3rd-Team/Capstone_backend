@@ -23,5 +23,4 @@ public record ExtractionStartedEvent(
     public String getPartitionKey() {
         return websiteId != null ? websiteId.getId().toString() : "default";
     }
-
 }
