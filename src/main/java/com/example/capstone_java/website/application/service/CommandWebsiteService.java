@@ -20,13 +20,15 @@ public class CommandWebsiteService implements ExtractUrlsUseCase {
     @Override
     @Transactional
     public WebsiteId execute(final String mainUrl) {
-        Website website = Website.create(mainUrl).startExtraction();
-        // 진행 상태로 저장
+        // PENDING 상태로 저장 (Consumer가 PROGRESS로 변경)
+        Website website = Website.create(mainUrl);
         Website savedWebsite = saveWebsitePort.save(website);
-
-        ExtractionStartedEvent extractionStartedEvent = ExtractionStartedEvent.of(savedWebsite.getWebsiteId(), savedWebsite.getMainUrl());
+        // websiteId,mainUrl,eventOccurredAt을 가지고 추출시작이벤트 생성
+        ExtractionStartedEvent extractionStartedEvent = ExtractionStartedEvent.of(
+                savedWebsite.getWebsiteId(),
+                savedWebsite.getMainUrl());
+        // 이벤트 produce 이후 ExtractionEventConsumer가 이벤트 소비
         eventDispatcher.dispatch(extractionStartedEvent);
-
         return savedWebsite.getWebsiteId();
     }
 }
