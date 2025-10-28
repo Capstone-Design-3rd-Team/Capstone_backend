@@ -1,7 +1,7 @@
 package com.example.capstone_java.website.domain.entity;
 
 import com.example.capstone_java.website.domain.event.UrlCrawlEvent;
-import com.example.capstone_java.website.domain.vo.CrawlConfiguration;
+import com.example.capstone_java.website.global.config.CrawlConfiguration;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import lombok.Getter;
 
@@ -26,8 +26,14 @@ public final class Website {
         this.createdAt = createdAt;
     }
 
+    // 랜덤 id를 제외하고, 메인url, url 상태, 해당 url을 설정, url 생성시간을 생성
     public static Website create(final String mainUrl) {
-        return new Website(null, mainUrl, ExtractionStatus.PENDING, CrawlConfiguration.defaultConfiguration(), LocalDateTime.now());
+        return new Website(
+                null,
+                mainUrl,
+                ExtractionStatus.PENDING,
+                CrawlConfiguration.defaultConfiguration(),
+                LocalDateTime.now());
     }
 
     public static Website create(final String mainUrl, final CrawlConfiguration crawlConfig) {
@@ -84,16 +90,6 @@ public final class Website {
     }
 
     /**
-     * 루트 URL 크롤링 이벤트 생성 (도메인 로직)
-     */
-    public UrlCrawlEvent createRootCrawlEvent() {
-        if (!canStartCrawling()) {
-            throw new IllegalStateException("크롤링을 시작할 수 없는 상태입니다: " + this.extractionStatus);
-        }
-        return UrlCrawlEvent.createRootCrawl(this.websiteId, this.mainUrl, this.crawlConfig.maxDepth());
-    }
-
-    /**
      * 특정 깊이가 크롤링 가능한지 도메인 로직으로 판단
      */
     public boolean canCrawlAtDepth(int depth) {
@@ -124,7 +120,7 @@ public final class Website {
     /**
      * 크롤링 제한에 도달했는지 도메인 로직으로 판단
      */
-    public boolean hasReachedCrawlLimits(int currentUrlCount) {
+    public boolean hasReachedCrawlLimits(long currentUrlCount) {
         return currentUrlCount >= this.crawlConfig.maxTotalUrls();
     }
 
@@ -162,21 +158,6 @@ public final class Website {
         } catch (Exception e) {
             return false;
         }
-    }
-
-    /**
-     * 발견된 URL들로부터 크롤링 이벤트들을 생성하는 도메인 로직
-     */
-    public List<UrlCrawlEvent> createChildCrawlEvents(List<String> urls, String parentUrl, int currentDepth) {
-        return urls.stream()
-            .map(url -> UrlCrawlEvent.createChildCrawl(
-                this.websiteId,
-                url,
-                parentUrl,
-                currentDepth + 1,
-                this.crawlConfig.maxDepth()
-            ))
-            .collect(Collectors.toList());
     }
 
     /**

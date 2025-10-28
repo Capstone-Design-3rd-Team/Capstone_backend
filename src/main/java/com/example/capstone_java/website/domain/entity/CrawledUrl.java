@@ -77,22 +77,6 @@ public final class CrawledUrl {
     }
 
     /**
-     * 다음 깊이의 자식 URL 크롤링 이벤트 생성 (도메인 로직)
-     */
-    public UrlCrawlEvent createChildCrawlEvent(String childUrl, int maxDepth) {
-        if (!isCrawlingCompleted()) {
-            throw new IllegalStateException("부모 URL이 크롤링 완료되지 않았습니다: " + this.url);
-        }
-
-        int childDepth = this.depth + 1;
-        if (childDepth >= maxDepth) {
-            throw new IllegalArgumentException("최대 크롤링 깊이를 초과했습니다: " + childDepth + " >= " + maxDepth);
-        }
-
-        return UrlCrawlEvent.createChildCrawl(this.websiteId, childUrl, this.url, childDepth, maxDepth);
-    }
-
-    /**
      * 자식 URL들을 위한 배치 이벤트 생성 가능한지 도메인 로직으로 판단
      */
     public boolean canCreateChildEvents(int maxDepth) {
