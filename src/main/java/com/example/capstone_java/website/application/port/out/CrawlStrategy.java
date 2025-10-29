@@ -1,6 +1,6 @@
 package com.example.capstone_java.website.application.port.out;
 
-import java.util.Set;
+import java.util.List;
 
 /**
  * 크롤링 전략 인터페이스
@@ -17,7 +17,7 @@ public interface CrawlStrategy {
      * @param url 크롤링할 URL
      * @return 발견된 URL 목록
      */
-    Set<String> extractUrls(String url);
+    List<String> extractUrls(String url);
 
     /**
      * 이 전략이 주어진 URL을 처리할 수 있는지 판단

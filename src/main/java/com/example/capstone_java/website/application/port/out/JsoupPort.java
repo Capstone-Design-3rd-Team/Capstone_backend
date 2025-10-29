@@ -1,7 +1,7 @@
 package com.example.capstone_java.website.application.port.out;
 
-import java.util.Set;
+import java.util.List;
 
 public interface JsoupPort {
-    Set<String> getCrawledUrls(String url);
+    List<String> getCrawledUrls(String url);
 }

@@ -11,8 +11,8 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.net.MalformedURLException;
 import java.net.URL;
-import java.util.HashSet;
-import java.util.Set;
+import java.util.ArrayList;
+import java.util.List;
 
 @Slf4j
 @Component
@@ -22,8 +22,8 @@ public class JsoupAdapter implements JsoupPort {
     private static final String USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36";
 
     @Override
-    public Set<String> getCrawledUrls(String url) {
-        Set<String> validUrls = new HashSet<>();
+    public List<String> getCrawledUrls(String url) {
+        List<String> validUrls = new ArrayList<>();
 
         try {
             log.info("크롤링 시작: {}", url);
