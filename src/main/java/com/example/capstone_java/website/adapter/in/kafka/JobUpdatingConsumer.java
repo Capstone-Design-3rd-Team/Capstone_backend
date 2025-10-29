@@ -75,10 +75,11 @@ public class JobUpdatingConsumer {
                     .orElseThrow(() -> new IllegalStateException("website 도메인을 찾을 수 없습니다"));
 
             // 도메인 로직: 깊이 확인
+            // jobupdating에서 다시 이벤트를 받아 확인해야 되기 때문에 크롤링하기 전에 먼저 검사해야한다
+            // 자식 depth를 체크 : 새로 만들 자식 url들이 크롤링 가능한지 체크
             if (!website.canCrawlAtDepth(event.depth() + 1)) {
                 log.info("최대 크롤링 깊이 도달. 처리 중단 - WebsiteId: {}, Depth: {}",
                         event.websiteId().getId(), event.depth());
-                acknowledgment.acknowledge();
                 return;
             }
 
@@ -87,7 +88,6 @@ public class JobUpdatingConsumer {
             if (website.hasReachedCrawlLimits(currentTotalUrls)) {
                 log.info("크롤링 URL 수 제한 도달. 처리 중단 - WebsiteId: {}, 현재 URL 수: {}, 최대: {}",
                         event.websiteId().getId(), currentTotalUrls, website.getCrawlConfig().maxTotalUrls());
-                acknowledgment.acknowledge();
                 return;
             }
 
@@ -96,7 +96,6 @@ public class JobUpdatingConsumer {
             if (elapsed.compareTo(website.getCrawlConfig().maxDuration()) > 0) {
                 log.info("크롤링 시간 제한 도달. 처리 중단 - WebsiteId: {}, 경과 시간: {} 분, 최대: {} 분",
                         event.websiteId().getId(), elapsed.toMinutes(), website.getCrawlConfig().maxDuration().toMinutes());
-                acknowledgment.acknowledge();
                 return;
             }
 
@@ -108,7 +107,6 @@ public class JobUpdatingConsumer {
 
             if (newUrls.isEmpty()) {
                 log.info("모든 URL이 이미 발견됨. 새로운 작업 없음 - WebsiteId: {}", event.websiteId().getId());
-                acknowledgment.acknowledge();
                 return;
             }
 
@@ -133,14 +131,16 @@ public class JobUpdatingConsumer {
             // 이벤트 발행
             crawlEvents.forEach(eventDispatcher::dispatch);
 
-            acknowledgment.acknowledge();
             log.info("발견된 URL 배치 처리 완료 - WebsiteId: {}, 처리된 새 URL: {}/{}",
                     event.websiteId().getId(), newUrls.size(), event.urlCount());
+
+            // 모든 처리 완료 후 마지막에 한 번만 acknowledge (메시지 처리 완료를 Kafka에 알림)
+            acknowledgment.acknowledge();
 
         } catch (Exception e) {
             log.error("발견된 URL 배치 처리 실패 (재시도 예정) - WebsiteId: {}, URL 개수: {}, Error: {}",
                     event.websiteId().getId(), event.urlCount(), e.getMessage(), e);
-            throw e;
+            throw e;  // acknowledge 없이 throw → Kafka가 메시지 재시도
         }
     }
 
