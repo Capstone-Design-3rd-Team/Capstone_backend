@@ -3,12 +3,11 @@ package com.example.capstone_java.website.adapter.in.kafka;
 import com.example.capstone_java.website.application.port.out.CrawlCachePort;
 import com.example.capstone_java.website.application.port.out.GetWebsitePort;
 import com.example.capstone_java.website.application.port.out.SaveCrawledUrlPort;
-import com.example.capstone_java.website.application.service.UrlValidationService;
 import com.example.capstone_java.website.domain.entity.CrawledUrl;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.event.DiscoveredUrlsEvent;
 import com.example.capstone_java.website.domain.event.UrlCrawlEvent;
-import com.example.capstone_java.website.global.common.KafkaFactories;
+import com.example.capstone_java.website.domain.vo.WebsiteId;
 import com.example.capstone_java.website.global.common.KafkaGroups;
 import com.example.capstone_java.website.global.common.KafkaTopics;
 import com.example.capstone_java.website.application.event.EventDispatcher;
@@ -24,6 +23,8 @@ import org.springframework.retry.annotation.Backoff;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -45,7 +46,6 @@ public class JobUpdatingConsumer {
     private final SaveCrawledUrlPort saveCrawledUrlPort;
     private final CrawlCachePort crawlCachePort;
     private final GetWebsitePort getWebsitePort;
-    private final UrlValidationService urlValidationService;
     private final EventDispatcher eventDispatcher;
 
     @RetryableTopic(
@@ -56,7 +56,7 @@ public class JobUpdatingConsumer {
     @KafkaListener(
         topics = KafkaTopics.URL_DISCOVERED_EVENTS,
         groupId = KafkaGroups.JOB_UPDATING_GROUP,
-        containerFactory = KafkaFactories.JOB_UPDATING_LISTENER_CONTAINER_FACTORY
+        concurrency = "3"
     )
     @Transactional
     public void handleDiscoveredUrls(
@@ -71,21 +71,31 @@ public class JobUpdatingConsumer {
                     topic, event.websiteId().getId(), event.urlCount(), event.depth(), partition, offset);
 
             // Website 도메인 조회
-            Website website = getWebsitePort.getById(event.websiteId());
+            Website website = getWebsitePort.findById(event.websiteId())
+                    .orElseThrow(() -> new IllegalStateException("website 도메인을 찾을 수 없습니다"));
 
             // 도메인 로직: 깊이 확인
+            // jobupdating에서 다시 이벤트를 받아 확인해야 되기 때문에 크롤링하기 전에 먼저 검사해야한다
+            // 자식 depth를 체크 : 새로 만들 자식 url들이 크롤링 가능한지 체크
             if (!website.canCrawlAtDepth(event.depth() + 1)) {
                 log.info("최대 크롤링 깊이 도달. 처리 중단 - WebsiteId: {}, Depth: {}",
                         event.websiteId().getId(), event.depth());
-                acknowledgment.acknowledge();
                 return;
             }
 
-            // 도메인 로직: URL 수 제한 확인
-            if (website.hasReachedCrawlLimits(event.urlCount())) {
-                log.info("크롤링 URL 수 제한 도달. 처리 중단 - WebsiteId: {}, URL 수: {}",
-                        event.websiteId().getId(), event.urlCount());
-                acknowledgment.acknowledge();
+            // 도메인 로직: 전체 URL 수 제한 확인 (DB에서 실제 누적 개수 조회)
+            long currentTotalUrls = saveCrawledUrlPort.countByWebsiteId(event.websiteId());
+            if (website.hasReachedCrawlLimits(currentTotalUrls)) {
+                log.info("크롤링 URL 수 제한 도달. 처리 중단 - WebsiteId: {}, 현재 URL 수: {}, 최대: {}",
+                        event.websiteId().getId(), currentTotalUrls, website.getCrawlConfig().maxTotalUrls());
+                return;
+            }
+
+            // 도메인 로직: 크롤링 시간 제한 확인
+            Duration elapsed = Duration.between(website.getCreatedAt(), LocalDateTime.now());
+            if (elapsed.compareTo(website.getCrawlConfig().maxDuration()) > 0) {
+                log.info("크롤링 시간 제한 도달. 처리 중단 - WebsiteId: {}, 경과 시간: {} 분, 최대: {} 분",
+                        event.websiteId().getId(), elapsed.toMinutes(), website.getCrawlConfig().maxDuration().toMinutes());
                 return;
             }
 
@@ -97,7 +107,6 @@ public class JobUpdatingConsumer {
 
             if (newUrls.isEmpty()) {
                 log.info("모든 URL이 이미 발견됨. 새로운 작업 없음 - WebsiteId: {}", event.websiteId().getId());
-                acknowledgment.acknowledge();
                 return;
             }
 
@@ -109,24 +118,29 @@ public class JobUpdatingConsumer {
             saveCrawledUrlPort.saveAll(crawledUrls);
             log.info("새로운 URL {} 개를 DB에 저장 완료", newUrls.size());
 
-            // 도메인이 직접 크롤링 이벤트들 생성 (진짜 DDD 방식)
-            List<UrlCrawlEvent> crawlEvents = website.createChildCrawlEvents(
-                newUrls,
-                event.parentUrl(),
-                event.depth()
-            );
+            // 크롤링 이벤트들 생성 및 발행
+            List<UrlCrawlEvent> crawlEvents = newUrls.stream()
+                .map(url -> UrlCrawlEvent.createChildCrawl(
+                    event.websiteId(),
+                    url,
+                    event.parentUrl(),
+                    event.depth() + 1
+                ))
+                .collect(Collectors.toList());
 
-            // 인프라 작업: 이벤트 발행
+            // 이벤트 발행
             crawlEvents.forEach(eventDispatcher::dispatch);
 
-            acknowledgment.acknowledge();
             log.info("발견된 URL 배치 처리 완료 - WebsiteId: {}, 처리된 새 URL: {}/{}",
                     event.websiteId().getId(), newUrls.size(), event.urlCount());
+
+            // 모든 처리 완료 후 마지막에 한 번만 acknowledge (메시지 처리 완료를 Kafka에 알림)
+            acknowledgment.acknowledge();
 
         } catch (Exception e) {
             log.error("발견된 URL 배치 처리 실패 (재시도 예정) - WebsiteId: {}, URL 개수: {}, Error: {}",
                     event.websiteId().getId(), event.urlCount(), e.getMessage(), e);
-            throw e;
+            throw e;  // acknowledge 없이 throw → Kafka가 메시지 재시도
         }
     }
 
@@ -176,8 +190,7 @@ public class JobUpdatingConsumer {
                     event.websiteId(),
                     url,
                     event.parentUrl(),
-                    event.depth() + 1,
-                    event.maxDepth()
+                    event.depth() + 1
                 );
 
                 eventDispatcher.dispatch(crawlEvent);

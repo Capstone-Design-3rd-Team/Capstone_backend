@@ -1,10 +1,13 @@
 package com.example.capstone_java.website.global.config;
 
+import com.example.capstone_java.website.global.common.KafkaTopics;
+import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.clients.producer.ProducerConfig;
 import org.apache.kafka.common.serialization.StringSerializer;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.TopicBuilder;
 import org.springframework.kafka.core.DefaultKafkaProducerFactory;
 import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.kafka.core.ProducerFactory;
@@ -32,5 +35,38 @@ public class KafkaProducerConfig {
     @Bean
     public KafkaTemplate<String, Object> kafkaTemplate() {
         return new KafkaTemplate<>(producerFactory());
+    }
+
+    /**
+     * URL 크롤링 이벤트 토픽 - 병렬 처리를 위해 8개 파티션 설정
+     */
+    @Bean
+    public NewTopic urlCrawlEventsTopic() {
+        return TopicBuilder.name(KafkaTopics.URL_CRAWL_EVENTS)
+                .partitions(8)
+                .replicas(1)
+                .build();
+    }
+
+    /**
+     * URL 발견 이벤트 토픽 - 병렬 처리를 위해 4개 파티션 설정
+     */
+    @Bean
+    public NewTopic urlDiscoveredEventsTopic() {
+        return TopicBuilder.name(KafkaTopics.URL_DISCOVERED_EVENTS)
+                .partitions(4)
+                .replicas(1)
+                .build();
+    }
+
+    /**
+     * 추출 시작 이벤트 토픽 - 순차 처리용 1개 파티션
+     */
+    @Bean
+    public NewTopic extractionStartedEventsTopic() {
+        return TopicBuilder.name(KafkaTopics.EXTRACTION_STARTED_EVENTS)
+                .partitions(1)
+                .replicas(1)
+                .build();
     }
 }

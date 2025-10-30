@@ -1,4 +1,4 @@
-package com.example.capstone_java.website.domain.vo;
+package com.example.capstone_java.website.global.config;
 
 import java.time.Duration;
 import java.util.Set;
@@ -18,9 +18,9 @@ public record CrawlConfiguration(
 
     public static CrawlConfiguration defaultConfiguration() {
         return new CrawlConfiguration(
-                3,                                    // maxDepth
+                5,                                    // maxDepth (3 -> 5로 증가)
                 5000,                                // maxTotalUrls
-                50,                                  // maxUrlsPerPage
+                100,                                 // maxUrlsPerPage (50 -> 100으로 증가)
                 Duration.ofHours(1),                 // maxDuration
                 Set.of(),                            // allowedPaths (모든 경로 허용)
                 Set.of("/admin/", "/api/", "/login/") // excludedPaths

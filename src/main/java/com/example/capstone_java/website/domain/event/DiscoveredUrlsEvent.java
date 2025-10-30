@@ -14,7 +14,6 @@ public record DiscoveredUrlsEvent(
         String parentUrl,
         List<String> discoveredUrls,
         int depth,
-        int maxDepth,
         LocalDateTime eventOccurredAt
 ) implements DomainEvent {
 
@@ -27,25 +26,24 @@ public record DiscoveredUrlsEvent(
             WebsiteId websiteId,
             String parentUrl,
             List<String> discoveredUrls,
-            int depth,
-            int maxDepth
+            int depth
     ) {
         return new DiscoveredUrlsEvent(
                 websiteId,
                 parentUrl,
                 List.copyOf(discoveredUrls), // 불변 리스트로 복사
                 depth,
-                maxDepth,
                 LocalDateTime.now()
         );
     }
 
+    /**
+     * 파티션 키: parentUrl을 사용하여 분산
+     * - 같은 부모 URL에서 발견된 자식 URL들은 순서 보장
+     * - 다른 부모 URL들은 병렬 처리
+     */
     public String getPartitionKey() {
-        return websiteId != null ? websiteId.getId().toString() : "default";
-    }
-
-    public boolean hasReachedMaxDepth() {
-        return depth >= maxDepth;
+        return parentUrl != null ? parentUrl : "root";
     }
 
     public int urlCount() {

@@ -43,4 +43,14 @@ public interface SaveCrawledUrlPort {
      * 특정 WebsiteId의 크롤링 대상 URL들 조회 (DISCOVERED 상태)
      */
     List<CrawledUrl> findPendingUrls(WebsiteId websiteId, int maxDepth);
+
+    /**
+     * 특정 WebsiteId의 모든 크롤링된 URL들 조회
+     */
+    List<CrawledUrl> findByWebsiteId(WebsiteId websiteId);
+
+    /**
+     * 특정 WebsiteId의 크롤링된 URL 총 개수 조회
+     */
+    long countByWebsiteId(WebsiteId websiteId);
 }
