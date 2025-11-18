@@ -30,7 +30,7 @@ public class UrlCrawlEventConsumer {
     @KafkaListener(
         topics = KafkaTopics.URL_CRAWL_EVENTS,
         groupId = KafkaGroups.URL_PROCESSING_GROUP,
-        concurrency = "20"  // 20개 스레드로 병렬 처리
+        concurrency = "4"  // Playwright 브라우저 풀 크기와 동일
     )
     public void handleUrlCrawlEvent(
         @Payload UrlCrawlEvent event,

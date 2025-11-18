@@ -11,7 +11,10 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "website")
+@Table(name = "website", indexes = {
+    @Index(name = "idx_extraction_status", columnList = "extractionStatus"),
+    @Index(name = "idx_created_at", columnList = "createdAt")
+})
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor(access = AccessLevel.PROTECTED)

@@ -5,9 +5,12 @@ on:
   push:
     branches:
       - 'dev'
+      - 'main'
 
 jobs:
   build:
+    # 빌드 테스트하기 위해서 일회용으로 깃허브에서 제공하는 가상머신으로 내가 만든 인스턴스가 아닌 깃허브에서 제공해주는거라
+    # 자바 설치와 필요한 설정을 해줘야 했던거였음
     name: "Check Gradle Build"
     runs-on: ubuntu-latest
 
@@ -25,6 +28,7 @@ jobs:
       - name: Cache Gradle packages
         uses: actions/cache@v3
         with:
+          # 깃허브 캐시 저장소에 저장해서 빌드 라이브러리를 재사용
           path: |
             ~/.gradle/caches
             ~/.gradle/wrapper

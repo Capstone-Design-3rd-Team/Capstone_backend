@@ -15,6 +15,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.BlockingQueue;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import java.util.stream.Collectors;
@@ -24,10 +25,11 @@ import java.util.stream.Collectors;
  *
  * 책임: JavaScript 실행 후 URL 추출 (검증/필터링은 Website 도메인이 함)
  *
- * 효율적 리소스 관리:
- * - 공유 Browser 인스턴스를 주입받아 재사용 (무거운 작업 방지)
- * - 요청마다 가벼운 BrowserContext와 Page만 생성/종료
- * - BrowserContext는 "시크릿 모드 탭"과 유사하게 격리된 환경 제공
+ * 브라우저 풀 패턴:
+ * - BlockingQueue에서 브라우저를 빌려옴 (take)
+ * - 사용 후 반드시 풀에 반환 (offer)
+ * - 풀이 비어있으면 자동으로 대기 (thread-safe)
+ * - 동시 처리 개수가 풀 크기로 자연스럽게 제한됨
  *
  * JavaScript 링크 처리:
  * - javascript:goMenu('CODE') 패턴을 실제 URL로 변환
@@ -38,8 +40,8 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class PlaywrightStrategy implements CrawlStrategy {
 
-    // PlaywrightConfig에서 생성한 공유 브라우저 인스턴스를 주입받음
-    private final Browser browser;
+    // PlaywrightConfig에서 생성한 브라우저 풀을 주입받음
+    private final BlockingQueue<Browser> browserPool;
 
     // JavaScript 함수 호출 패턴 (예: javascript:goMenu('HOMBKI030000'))
     private static final Pattern JS_GO_MENU_PATTERN = Pattern.compile("javascript:goMenu\\(['\"]([A-Z0-9]+)['\"]\\)");
@@ -49,25 +51,65 @@ public class PlaywrightStrategy implements CrawlStrategy {
 
     @Override
     public List<String> extractUrls(String url) {
+        int maxRetries = 3;
+        long baseDelay = 500; // 0.5초
+
+        for (int attempt = 1; attempt <= maxRetries; attempt++) {
+            try {
+                return doExtractUrls(url);
+
+            } catch (PlaywrightException e) {
+                if (attempt == maxRetries) {
+                    log.error("Playwright 크롤링 최종 실패 - URL: {}, 재시도 {}/{}회 모두 실패, Error: {}",
+                             url, maxRetries, maxRetries, e.getMessage());
+                    return List.of();
+                }
+
+                long delay = baseDelay * attempt; // 0.5초, 1초, 1.5초
+                log.warn("Playwright 일시적 실패 - URL: {}, 재시도 {}/{}, {}ms 후 재시도, Error: {}",
+                         url, attempt, maxRetries, delay, e.getMessage());
+
+                try {
+                    Thread.sleep(delay);
+                } catch (InterruptedException ie) {
+                    Thread.currentThread().interrupt();
+                    log.error("재시도 대기 중 인터럽트 발생 - URL: {}", url);
+                    return List.of();
+                }
+            }
+        }
+        return List.of();
+    }
+
+    /**
+     * 실제 URL 추출 로직 (재시도 대상)
+     */
+    private List<String> doExtractUrls(String url) {
         Set<String> uniqueUrls = new LinkedHashSet<>();
         String baseUrl = extractBaseUrl(url);
 
-        // 1. BrowserContext와 Page는 가벼우므로 매번 생성/종료 (try-with-resources)
-        try (BrowserContext context = browser.newContext();
-             Page page = context.newPage()) {
+        Browser browser = null;
+        try {
+            // 1. 브라우저 풀에서 브라우저 가져오기 (없으면 대기)
+            browser = browserPool.take();
+            log.debug("브라우저 풀에서 브라우저 획득 (남은 개수: {})", browserPool.size());
 
-            // 2. 페이지 타임아웃 설정 (무한 대기 방지)
-            page.setDefaultTimeout(15_000); // 15초
+            // 2. BrowserContext와 Page는 가벼우므로 매번 생성/종료
+            try (BrowserContext context = browser.newContext();
+                 Page page = context.newPage()) {
 
-            log.debug("Playwright로 네비게이션 시작: {}", url);
+                // 3. 페이지 타임아웃 설정 (무한 대기 방지)
+                page.setDefaultTimeout(15_000); // 15초
 
-            // 3. 페이지로 이동 (Playwright는 기본적으로 'load' 이벤트까지 자동 대기)
-            page.navigate(url);
+                log.debug("Playwright로 네비게이션 시작: {}", url);
 
-            // SPA 사이트가 완전히 로드되도록 추가 대기
-            page.waitForTimeout(2000); // 2초 대기
+                // 4. 페이지로 이동 (Playwright는 기본적으로 'load' 이벤트까지 자동 대기)
+                page.navigate(url);
 
-            log.debug("Playwright로 DOM 분석 시작: {}", url);
+                // SPA 사이트가 완전히 로드되도록 추가 대기
+                page.waitForTimeout(2000); // 2초 대기
+
+                log.debug("Playwright로 DOM 분석 시작: {}", url);
 
             // 4. JavaScript를 사용하여 모든 링크와 클릭 가능한 요소에서 URL 추출
             Object result = page.evaluate("""
@@ -116,25 +158,37 @@ public class PlaywrightStrategy implements CrawlStrategy {
                 }
                 """);
 
-            // 5. 추출된 링크 처리
-            if (result instanceof List<?>) {
-                for (Object item : (List<?>) result) {
-                    if (item instanceof String) {
-                        String href = (String) item;
-                        String processedUrl = processUrl(href, baseUrl);
-                        if (processedUrl != null) {
-                            uniqueUrls.add(processedUrl);
+                // 5. 추출된 링크 처리
+                if (result instanceof List<?>) {
+                    for (Object item : (List<?>) result) {
+                        if (item instanceof String) {
+                            String href = (String) item;
+                            String processedUrl = processUrl(href, baseUrl);
+                            if (processedUrl != null) {
+                                uniqueUrls.add(processedUrl);
+                            }
                         }
                     }
                 }
+
+                log.info("Playwright가 {}에서 {}개의 URL 추출", url, uniqueUrls.size());
             }
 
-            log.info("Playwright가 {}에서 {}개의 URL 추출", url, uniqueUrls.size());
             return new ArrayList<>(uniqueUrls);
 
-        } catch (PlaywrightException e) {
-            log.error("Playwright 크롤링 실패 - URL: {}, Error: {}", url, e.getMessage());
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("브라우저 풀에서 브라우저 획득 중 인터럽트 발생", e);
             return List.of();
+        } catch (PlaywrightException e) {
+            // 재시도를 위해 예외를 다시 던짐
+            throw e;
+        } finally {
+            // 6. 반드시 브라우저를 풀에 반환
+            if (browser != null) {
+                browserPool.offer(browser);
+                log.debug("브라우저 풀에 반환 완료 (현재 개수: {})", browserPool.size());
+            }
         }
     }
 
@@ -171,17 +225,29 @@ public class PlaywrightStrategy implements CrawlStrategy {
             }
         }
 
-        // 3. 일반 URL 처리
+        // 3. onclick 속성에서 viewGo 함수 추출 (예: "viewGo('34')")
+        if (href.contains("viewGo")) {
+            Pattern viewGoPattern = Pattern.compile("viewGo\\(['\"]([0-9]+)['\"]\\)");
+            Matcher matcher = viewGoPattern.matcher(href);
+            if (matcher.find()) {
+                String topicSeq = matcher.group(1);
+                String convertedUrl = baseUrl + "/ilos/guide/guide_topic_form.acl?TOPIC_SEQ=" + topicSeq + "&FLAG=0";
+                log.debug("viewGo 함수 변환: {} -> {}", href, convertedUrl);
+                return convertedUrl;
+            }
+        }
+
+        // 4. 일반 URL 처리
         if (href.startsWith("javascript:") || href.startsWith("mailto:") || href.startsWith("tel:") || href.startsWith("#")) {
             return null; // 무시
         }
 
-        // 4. 절대 URL
+        // 5. 절대 URL
         if (href.startsWith("http://") || href.startsWith("https://")) {
             return href;
         }
 
-        // 5. 상대 경로를 절대 경로로 변환
+        // 6. 상대 경로를 절대 경로로 변환
         if (href.startsWith("/")) {
             return baseUrl + href;
         }
@@ -193,7 +259,6 @@ public class PlaywrightStrategy implements CrawlStrategy {
      * URL에서 기본 URL 추출 (프로토콜 + 도메인)
      *
      * @param url 전체 URL
-     * @return 기본 URL (예: https://www.kbanknow.com)
      */
     private String extractBaseUrl(String url) {
         try {

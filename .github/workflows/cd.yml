@@ -10,21 +10,9 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
+        # vm에 원격 저장소에 저장돼 있는 코드 가져오기
       - name: Checkout code
         uses: actions/checkout@v4
-
-      - name: Setup Java 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
-
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-
-      - name: Build with Gradle
-        run: ./gradlew clean build -x test
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -60,49 +48,30 @@ jobs:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USERNAME }}
           key: ${{ secrets.EC2_SSH_KEY }}
-          command_timeout: 30m
+          command_timeout: 15m
           script: |
             set -e
             cd /home/ubuntu/capstone-crawler
 
-            # Docker Hub 로그인
+            # Docker 로그인 및 이미지 pull
             echo "${{ secrets.DOCKER_PASSWORD }}" | docker login -u "${{ secrets.DOCKER_USERNAME }}" --password-stdin
+            docker pull ${{ secrets.DOCKER_USERNAME }}/capstone-crawler:latest
 
-            # Docker Compose 타임아웃 설정
-            export COMPOSE_HTTP_TIMEOUT=1200
+            # 서비스 재시작 (.env 환경변수 갱신 보장)
+            docker-compose -f docker-compose.prod.yml down
+            docker-compose -f docker-compose.prod.yml up -d
 
-            # 이미지 pull (재시도 로직 - 최대 3회)
-            i=0
-            until [ $i -ge 3 ]; do
-              if docker pull ${{ secrets.DOCKER_USERNAME }}/capstone-crawler:latest; then
-                echo "이미지 pull 성공"
-                break
-              fi
-              i=$((i+1))
-              echo "이미지 pull 실패 (${i}/3). 10초 후 재시도..."
-              sleep 10
-            done
-
-            if [ $i -ge 3 ]; then
-              echo "이미지 pull 최종 실패"
-              exit 1
-            fi
-
-            # 앱 서비스만 재시작
-            docker-compose -f docker-compose.prod.yml up -d --no-deps app
-
-            # Health check (최대 60초 대기)
-            echo "Health check 시작..."
-            for i in {1..12}; do
-              if docker exec capstone-crawler-prod curl -f http://localhost:8080/actuator/health; then
-                echo "Health check 성공"
-                break
-              fi
-              echo "Health check 대기 중... (${i}/12)"
+            # Health check (최대 30초)
+            for i in {1..6}; do
               sleep 5
+              if docker exec capstone-crawler-prod curl -sf http://localhost:8080/actuator/health > /dev/null 2>&1; then
+                echo "배포 성공 - 서비스 정상 작동"
+                docker image prune -af
+                exit 0
+              fi
+              echo "대기 중... (${i}/6)"
             done
 
-            # 이전 이미지 정리
-            docker image prune -f
-
-            echo "배포 완료"
+            echo "Health check 실패 - 로그 확인 필요"
+            docker logs --tail 50 capstone-crawler-prod
+            exit 1

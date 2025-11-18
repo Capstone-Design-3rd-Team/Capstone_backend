@@ -8,51 +8,75 @@ spring:
     password: ${MYSQL_PASSWORD}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
-      maximum-pool-size: 20
-      minimum-idle: 5
+      # RDS 프리티어 (db.t3.micro, 1GB RAM) 최적화
+      maximum-pool-size: 15  # RDS 메모리 부족 고려
+      minimum-idle: 3        # 유휴 커넥션 최소화
       connection-timeout: 30000
-      idle-timeout: 600000
-      max-lifetime: 1800000
+      idle-timeout: 300000   # 5분 (10분 -> 5분, 빠른 회수)
+      max-lifetime: 1200000  # 20분 (30분 -> 20분)
+      leak-detection-threshold: 60000  # 1분 (커넥션 누수 감지)
 
   jpa:
     hibernate:
-      ddl-auto: update
+      ddl-auto: update  # create-drop은 데이터 삭제! (위험)
     show-sql: false
     properties:
       hibernate:
         dialect: org.hibernate.dialect.MySQLDialect
         format_sql: false
         jdbc:
-          batch_size: 20
+          batch_size: 30  # RDS 프리티어: 메모리 고려 (20->30)
+          fetch_size: 50  # 추가: 쿼리 결과 배치 페칭
         order_inserts: true
         order_updates: true
+        # RDS 프리티어 메모리 최적화
+        query:
+          in_clause_parameter_padding: true  # IN 쿼리 최적화
 
   data:
     redis:
       host: ${REDIS_HOST}
       port: ${REDIS_PORT}
-      timeout: 6000ms
+      timeout: 3000ms  # 6000ms -> 3000ms (빠른 실패)
       lettuce:
         pool:
-          max-active: 20
-          max-wait: -1ms
-          max-idle: 10
-          min-idle: 5
-    mongodb:
-      uri: ${MONGODB_URI}
+          max-active: 12   # m7i-flex.large (2 vCPU) 최적화
+          max-wait: 3000ms # -1 -> 3000ms (무한 대기 방지)
+          max-idle: 6
+          min-idle: 2
 
 server:
   port: ${SERVER_PORT:8080}
   shutdown: graceful
   tomcat:
     threads:
-      max: 200
-      min-spare: 10
+      max: 50       # m7i-flex.large (2 vCPU): 100 -> 50
+      min-spare: 5  # 10 -> 5
+    connection-timeout: 20s
+    max-connections: 200  # 동시 연결 제한
+
+# AI 서버 설정
+ai:
+  server:
+    url: ${AI_SERVER_URL:http://15.164.30.147:8000}
+
+# 애플리케이션 콜백 URL 설정
+# EC2 배포 시: http://52.79.145.91:8080 (기본값)
+# 환경변수로 오버라이드 가능
+app:
+  callback:
+    base-url: ${APP_CALLBACK_BASE_URL:http://15.164.29.199:8080}
+
+# Playwright 브라우저 풀 설정
+playwright:
+  pool:
+    size: 4  # m7i-flex.large (8GB) 최적화
 
 logging:
   level:
-    com.example.capstone_java: INFO
+    com.example.capstone_java: WARN
     org.springframework.kafka: WARN
+    org.apache.kafka: ERROR  # Kafka Client 로그 최소화
     org.hibernate: WARN
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"

@@ -1,5 +1,23 @@
-# Single-stage build (GitHub Actions에서 JAR 빌드 완료)
-FROM eclipse-temurin:17-jre
+# Build stage
+FROM gradle:8.5-jdk17 AS builder
+
+WORKDIR /build
+
+# Copy Gradle files first for better caching
+COPY build.gradle settings.gradle ./
+COPY gradle ./gradle
+
+# Download dependencies (cached layer)
+RUN gradle dependencies --no-daemon || true
+
+# Copy source code
+COPY src ./src
+
+# Build JAR (skip tests - already done in CI)
+RUN gradle bootJar --no-daemon -x test
+
+# Runtime stage
+FROM eclipse-temurin:17-jre-jammy
 
 WORKDIR /app
 
@@ -31,8 +49,8 @@ RUN apt-get update && apt-get install -y \
     xdg-utils \
     && rm -rf /var/lib/apt/lists/*
 
-# Copy pre-built JAR from GitHub Actions
-COPY build/libs/*.jar app.jar
+# Copy JAR from build stage
+COPY --from=builder /build/build/libs/*.jar app.jar
 
 # Create a non-root user for security
 RUN useradd -m -u 1001 appuser && chown -R appuser:appuser /app

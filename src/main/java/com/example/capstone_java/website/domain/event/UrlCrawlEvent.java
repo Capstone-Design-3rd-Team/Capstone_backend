@@ -24,13 +24,4 @@ public record UrlCrawlEvent(
     public static UrlCrawlEvent createChildCrawl(WebsiteId websiteId, String url, String parentUrl, int depth) {
         return new UrlCrawlEvent(websiteId, url, parentUrl, depth, LocalDateTime.now());
     }
-
-    /**
-     * 파티션 키: URL 자체를 사용하여 균등 분산
-     * - 같은 URL은 항상 같은 파티션 (멱등성 보장)
-     * - 다른 URL은 골고루 분산 (병렬 처리)
-     */
-    public String getPartitionKey() {
-        return this.url;
-    }
 }

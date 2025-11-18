@@ -22,6 +22,10 @@ public interface DomainEvent {
 
     /**
      * Kafka 파티셔닝을 위한 키 생성
+     * 기본값은 null → 라운드 로빈 분산 (순서 보장 불필요)
+     * 순서 보장이 필요한 경우에만 오버라이드
      */
-    String getPartitionKey();
+    default String getPartitionKey() {
+        return null;
+    }
 }

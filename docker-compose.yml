@@ -1,7 +1,12 @@
+# 개발 환경용 Docker Compose
+# 사용법: docker-compose up -d
+
 services:
   zookeeper:
     image: confluentinc/cp-zookeeper:7.4.0
     container_name: zookeeper
+    env_file:
+      - .env.dev
     environment:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
@@ -13,6 +18,8 @@ services:
   kafka:
     image: confluentinc/cp-kafka:7.4.0
     container_name: kafka
+    env_file:
+      - .env.dev
     depends_on:
       - zookeeper
     ports:
@@ -28,13 +35,14 @@ services:
       KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
       KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: 'true'
-      KAFKA_NUM_PARTITIONS: 8
     networks:
       - capstone-network
 
   mysql:
     image: mysql:8.0
     container_name: mysql
+    env_file:
+      - .env.dev
     environment:
       MYSQL_ROOT_PASSWORD: ${MYSQL_PASSWORD:-rkwhr123}
       MYSQL_DATABASE: ${MYSQL_DATABASE:-capstone_db}
@@ -50,24 +58,11 @@ services:
       timeout: 5s
       retries: 5
 
-  mongodb:
-    image: mongo:7.0
-    container_name: mongodb
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongodb_data:/data/db
-    networks:
-      - capstone-network
-    healthcheck:
-      test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
   redis:
     image: redis:7-alpine
     container_name: redis
+    env_file:
+      - .env.dev
     ports:
       - "6379:6379"
     volumes:
@@ -80,6 +75,8 @@ services:
   kafka-ui:
     image: provectuslabs/kafka-ui:latest
     container_name: kafka-ui
+    env_file:
+      - .env.dev
     depends_on:
       - kafka
     ports:
@@ -93,7 +90,6 @@ services:
 
 volumes:
   mysql_data:
-  mongodb_data:
   redis_data:
 
 networks:

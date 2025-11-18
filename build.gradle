@@ -28,12 +28,16 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-web")
     implementation 'org.springframework.boot:spring-boot-starter-validation'
     implementation 'org.springframework.boot:spring-boot-starter-data-jpa'
+    implementation 'org.springframework.boot:spring-boot-starter-actuator'
 
     // Spring for Apache Kafka
     implementation("org.springframework.kafka:spring-kafka")
 
     // Redis for caching
     implementation 'org.springframework.boot:spring-boot-starter-data-redis'
+
+/*    // MongoDB for document storage
+    implementation 'org.springframework.boot:spring-boot-starter-data-mongodb'*/
 
     // Jsoup for HTML Parsing (정적 사이트용)
     implementation("org.jsoup:jsoup:1.17.2")

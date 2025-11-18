@@ -5,6 +5,8 @@ import com.example.capstone_java.website.global.config.CrawlConfiguration;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import lombok.Getter;
 
+import java.net.MalformedURLException;
+import java.net.URL;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -104,12 +106,17 @@ public final class Website {
             return false;
         }
 
-        // 제외 경로 확인
+        // 1. 같은 도메인인지 체크 (가장 먼저!)
+        if (!isSameDomain(url)) {
+            return false;
+        }
+
+        // 2. 제외 경로 확인
         if (this.crawlConfig.shouldExcludePath(url)) {
             return false;
         }
 
-        // 허용 경로 확인
+        // 3. 허용 경로 확인
         if (!this.crawlConfig.isAllowedPath(url)) {
             return false;
         }
@@ -154,8 +161,64 @@ public final class Website {
         }
 
         try {
-            return url.startsWith("http://") || url.startsWith("https://");
+            // HTTP/HTTPS 체크
+            if (!url.startsWith("http://") && !url.startsWith("https://")) {
+                return false;
+            }
+
+            // 다운로드 파일 URL 제외 (파일 다운로드는 크롤링 대상 아님)
+            String lowerUrl = url.toLowerCase();
+            if (lowerUrl.contains("download") ||
+                lowerUrl.contains("file_download") ||
+                lowerUrl.endsWith(".pdf") ||
+                lowerUrl.endsWith(".zip") ||
+                lowerUrl.endsWith(".doc") ||
+                lowerUrl.endsWith(".docx") ||
+                lowerUrl.endsWith(".xls") ||
+                lowerUrl.endsWith(".xlsx") ||
+                lowerUrl.endsWith(".ppt") ||
+                lowerUrl.endsWith(".pptx") ||
+                lowerUrl.endsWith(".hwp") ||
+                lowerUrl.endsWith(".jpg") ||
+                lowerUrl.endsWith(".png") ||
+                lowerUrl.endsWith(".gif") ||
+                lowerUrl.endsWith(".mp4") ||
+                lowerUrl.endsWith(".avi")) {
+                return false;
+            }
+
+            return true;
         } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * 같은 도메인인지 확인하는 도메인 로직
+     * mainUrl의 base domain과 비교 대상 URL의 base domain이 같은지 체크
+     */
+    private boolean isSameDomain(String url) {
+        try {
+            URL mainUrlObj = new URL(this.mainUrl);
+            URL targetUrlObj = new URL(url);
+
+            String mainHost = mainUrlObj.getHost();
+            String targetHost = targetUrlObj.getHost();
+
+            // 정확히 같은 호스트인 경우
+            if (mainHost.equals(targetHost)) {
+                return true;
+            }
+
+            // www 유무 차이만 있는 경우 허용
+            // example.com과 www.example.com은 같은 도메인으로 처리
+            String mainHostWithoutWww = mainHost.startsWith("www.") ? mainHost.substring(4) : mainHost;
+            String targetHostWithoutWww = targetHost.startsWith("www.") ? targetHost.substring(4) : targetHost;
+
+            return mainHostWithoutWww.equals(targetHostWithoutWww);
+
+        } catch (MalformedURLException e) {
+            // URL 파싱 실패 시 다른 도메인으로 간주
             return false;
         }
     }

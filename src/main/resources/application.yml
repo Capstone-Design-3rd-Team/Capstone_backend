@@ -31,13 +31,27 @@ spring:
           max-wait: -1ms
           max-idle: 8
           min-idle: 0
-    mongodb:
-      uri: ${MONGODB_URI:mongodb://localhost:27017/capstone_crawl_data}
 
 server:
   port: ${SERVER_PORT:8080}
+
+# AI 서버 설정
+ai:
+  server:
+    url: ${AI_SERVER_URL:http://15.164.30.147:8000}
+
+# 애플리케이션 콜백 URL 설정
+app:
+  callback:
+    base-url: ${APP_CALLBACK_BASE_URL:https://cb4ff1b1f029be.lhr.life}
+
+# Playwright 브라우저 풀 설정
+playwright:
+  pool:
+    size: 3  # 로컬 개발 환경
 
 logging:
   level:
     com.example.capstone_java: ${LOG_LEVEL:DEBUG}
     org.springframework.kafka: INFO
+    org.apache.kafka: WARN  # Kafka Client 로그 줄이기

@@ -7,6 +7,7 @@ import com.example.capstone_java.website.domain.entity.CrawledUrl;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.event.DiscoveredUrlsEvent;
 import com.example.capstone_java.website.domain.event.UrlCrawlEvent;
+import com.example.capstone_java.website.domain.event.UrlAnalysisRequestEvent;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import com.example.capstone_java.website.global.common.KafkaGroups;
 import com.example.capstone_java.website.global.common.KafkaTopics;
@@ -48,6 +49,9 @@ public class JobUpdatingConsumer {
     private final GetWebsitePort getWebsitePort;
     private final EventDispatcher eventDispatcher;
 
+    @org.springframework.beans.factory.annotation.Value("${app.callback.base-url:http://localhost:8080}")
+    private String callbackBaseUrl;
+
     @RetryableTopic(
         attempts = "3",
         backoff = @Backoff(delay = 1000, multiplier = 2.0),
@@ -56,7 +60,7 @@ public class JobUpdatingConsumer {
     @KafkaListener(
         topics = KafkaTopics.URL_DISCOVERED_EVENTS,
         groupId = KafkaGroups.JOB_UPDATING_GROUP,
-        concurrency = "3"
+        concurrency = "3"  // m7i-flex.large: DB+Redis 배치 I/O
     )
     @Transactional
     public void handleDiscoveredUrls(
@@ -128,8 +132,23 @@ public class JobUpdatingConsumer {
                 ))
                 .collect(Collectors.toList());
 
-            // 이벤트 발행
+            // 크롤링 이벤트 발행
             crawlEvents.forEach(eventDispatcher::dispatch);
+
+            // AI 분석 이벤트들 생성 및 발행 (각 URL마다 AI 분석 요청)
+            String callbackUrl = callbackBaseUrl + "/api/analysis/callback";
+            List<UrlAnalysisRequestEvent> analysisEvents = newUrls.stream()
+                .map(url -> UrlAnalysisRequestEvent.create(
+                    event.websiteId(),
+                    url,
+                    callbackUrl,
+                    event.depth() + 1
+                ))
+                .collect(Collectors.toList());
+
+            // AI 분석 이벤트 발행
+            analysisEvents.forEach(eventDispatcher::dispatch);
+            log.info("AI 분석 요청 이벤트 {} 개 발행 완료", analysisEvents.size());
 
             log.info("발견된 URL 배치 처리 완료 - WebsiteId: {}, 처리된 새 URL: {}/{}",
                     event.websiteId().getId(), newUrls.size(), event.urlCount());
