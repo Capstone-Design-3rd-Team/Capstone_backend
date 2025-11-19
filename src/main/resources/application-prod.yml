@@ -1,0 +1,98 @@
+spring:
+  kafka:
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS}
+
+  datasource:
+    url: jdbc:mysql://${MYSQL_HOST}:${MYSQL_PORT}/${MYSQL_DATABASE}
+    username: ${MYSQL_USERNAME}
+    password: ${MYSQL_PASSWORD}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      # RDS 프리티어 (db.t3.micro, 1GB RAM) 최적화
+      maximum-pool-size: 15  # RDS 메모리 부족 고려
+      minimum-idle: 3        # 유휴 커넥션 최소화
+      connection-timeout: 30000
+      idle-timeout: 300000   # 5분 (10분 -> 5분, 빠른 회수)
+      max-lifetime: 1200000  # 20분 (30분 -> 20분)
+      leak-detection-threshold: 60000  # 1분 (커넥션 누수 감지)
+
+  jpa:
+    hibernate:
+      ddl-auto: update  # create-drop은 데이터 삭제! (위험)
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.MySQLDialect
+        format_sql: false
+        jdbc:
+          batch_size: 30  # RDS 프리티어: 메모리 고려 (20->30)
+          fetch_size: 50  # 추가: 쿼리 결과 배치 페칭
+        order_inserts: true
+        order_updates: true
+        # RDS 프리티어 메모리 최적화
+        query:
+          in_clause_parameter_padding: true  # IN 쿼리 최적화
+
+  data:
+    redis:
+      host: ${REDIS_HOST}
+      port: ${REDIS_PORT}
+      timeout: 3000ms  # 6000ms -> 3000ms (빠른 실패)
+      lettuce:
+        pool:
+          max-active: 12   # m7i-flex.large (2 vCPU) 최적화
+          max-wait: 3000ms # -1 -> 3000ms (무한 대기 방지)
+          max-idle: 6
+          min-idle: 2
+
+server:
+  port: ${SERVER_PORT:8080}
+  shutdown: graceful
+  tomcat:
+    threads:
+      max: 50       # m7i-flex.large (2 vCPU): 100 -> 50
+      min-spare: 5  # 10 -> 5
+    connection-timeout: 20s
+    max-connections: 200  # 동시 연결 제한
+
+# AI 서버 설정
+ai:
+  server:
+    url: ${AI_SERVER_URL:http://15.164.30.147:8000}
+
+# 애플리케이션 콜백 URL 설정
+# EC2 배포 시: http://52.79.145.91:8080 (기본값)
+# 환경변수로 오버라이드 가능
+app:
+  callback:
+    base-url: ${APP_CALLBACK_BASE_URL:http://15.164.29.199:8080}
+
+# Playwright 브라우저 풀 설정
+playwright:
+  pool:
+    size: 4  # EC2 안정성 고려 (2 -> 4로 복원)
+
+logging:
+  level:
+    com.example.capstone_java: WARN
+    org.springframework.kafka: ERROR  # Kafka 경고 억제 (WARN -> ERROR)
+    org.apache.kafka: ERROR  # Kafka Client 로그 최소화
+    org.hibernate: WARN
+    # Kafka 파티션 경고 억제
+    org.springframework.kafka.support.LoggingProducerListener: ERROR
+    org.springframework.kafka.listener: ERROR
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+  file:
+    name: /var/log/capstone-crawler/application.log
+    max-size: 10MB
+    max-history: 30
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized

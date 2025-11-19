@@ -1,6 +1,5 @@
 package com.example.capstone_java.website.application.service;
 
-import com.example.capstone_java.website.adapter.out.JsoupStrategy;
 import com.example.capstone_java.website.adapter.out.PlaywrightStrategy;
 import com.example.capstone_java.website.application.port.out.GetWebsitePort;
 import com.example.capstone_java.website.application.port.out.SaveCrawledUrlPort;
@@ -8,10 +7,12 @@ import com.example.capstone_java.website.application.port.out.SaveWebsitePort;
 import com.example.capstone_java.website.domain.entity.CrawledUrl;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.event.DiscoveredUrlsEvent;
+import com.example.capstone_java.website.domain.event.UrlAnalysisRequestEvent;
 import com.example.capstone_java.website.domain.event.UrlCrawlEvent;
 import com.example.capstone_java.website.application.event.EventDispatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
@@ -20,21 +21,24 @@ import java.util.List;
  * 객체지향 설계 기반 크롤링 실행 서비스
  * 도메인 객체에게 책임을 위임하고 서비스는 객체들 간의 협력만 조정
  *
- * 크롤링 전략: Jsoup(빠름) → Playwright(느림) Fallback
+ * 크롤링 전략: Playwright 단독 사용
+ * - JavaScript 실행 후 동적 콘텐츠 추출
+ * - onclick 이벤트의 viewGo, goMenu 등 사용자 정의 함수 처리
+ * - 정적 <a href> 태그도 모두 추출
  */
 @Slf4j
 @Service
 @RequiredArgsConstructor
 public class CrawlExecutionService {
 
-    private static final int MIN_URL_THRESHOLD = 5;  // Jsoup이 찾은 URL이 이 값보다 적으면 Playwright로 재시도
-
-    private final JsoupStrategy jsoupStrategy;
     private final PlaywrightStrategy playwrightStrategy;
     private final GetWebsitePort getWebsitePort;
     private final SaveWebsitePort saveWebsitePort;
     private final SaveCrawledUrlPort saveCrawledUrlPort;
     private final EventDispatcher eventDispatcher;
+
+    @Value("${app.callback.base-url:http://localhost:8080}")
+    private String callbackBaseUrl;
 
     public void executeCrawl(UrlCrawlEvent event) {
         Website website = null;
@@ -51,8 +55,8 @@ public class CrawlExecutionService {
                 return;
             }
 
-            // 3. URL 추출: Jsoup 먼저 시도, 실패 시 Playwright로 자동 fallback
-            List<String> rawUrls = extractUrlsWithFallback(event.url());
+            // 3. URL 추출: Playwright로 JavaScript 실행 후 URL 추출
+            List<String> rawUrls = extractUrls(event.url());
 
             // 4. Website가 직접 URL 필터링 (중복 제거, 경로 검증, 페이지당 url 제한)
             List<String> validUrls = website.filterValidUrls(rawUrls);
@@ -76,6 +80,17 @@ public class CrawlExecutionService {
             CrawledUrl crawledUrl = createCrawledUrl(event);
             saveCrawledUrlPort.save(crawledUrl.markCrawled());
 
+            // 7. AI 분석 요청 이벤트 발행 (크롤링된 URL 자체에 대한 분석 요청)
+            String callbackUrl = callbackBaseUrl + "/api/analysis/callback";
+            UrlAnalysisRequestEvent analysisEvent = UrlAnalysisRequestEvent.create(
+                event.websiteId(),
+                event.url(),
+                callbackUrl,
+                event.depth()
+            );
+            eventDispatcher.dispatch(analysisEvent);
+            log.info("AI 분석 요청 이벤트 발행 완료 - URL: {}", event.url());
+
             log.info("크롤링 완료: URL={}, 발견된 URL 수={}", event.url(), finalUrls.size());
             log.info("URL 크롤링 완료 - WebsiteId: {}, URL: {}, Depth: {}",
                     website.getWebsiteId().getId(), event.url(), event.depth());
@@ -90,39 +105,26 @@ public class CrawlExecutionService {
     }
 
     /**
-     * Jsoup으로 먼저 시도하고, 실패하거나 URL을 찾지 못하면 Playwright로 재시도
+     * Playwright로 URL 추출
      *
      * 동작 방식:
-     * 1. Jsoup으로 크롤링 (빠름, 정적 HTML)
-     * 2. URL이 MIN_URL_THRESHOLD보다 적으면 → Playwright로 재시도 (느림, 동적 JavaScript)
-     * 3. 둘 다 실패 → 빈 리스트 반환
+     * 1. Playwright가 브라우저로 페이지 로드
+     * 2. JavaScript 실행 후 DOM에서 URL 추출
+     * 3. <a href>, onclick 이벤트, button 속성 등 모두 수집
+     * 4. viewGo(), goMenu() 등 사용자 정의 JavaScript 함수를 실제 URL로 변환
      *
-     * 개선점: JavaScript 기반 사이트는 Jsoup이 소수의 정적 링크만 찾는 경우가 있음.
-     *         이 경우 Playwright로 재시도하여 동적으로 생성된 링크도 수집.
+     * 장점:
+     * - 정적 링크 + 동적 링크 모두 추출
+     * - JavaScript 기반 SPA 사이트 완벽 지원
+     * - onclick 이벤트의 사용자 정의 함수 처리
      */
-    private List<String> extractUrlsWithFallback(String url) {
-        // 1차 시도: Jsoup (빠른 정적 크롤링)
-        List<String> urls = jsoupStrategy.extractUrls(url);
-
-        if (!urls.isEmpty() && urls.size() >= MIN_URL_THRESHOLD) {
-            log.info("Jsoup으로 URL 추출 성공: {} URLs", urls.size());
-            return urls;
-        }
-
-        // 2차 시도: Playwright (느린 동적 크롤링)
-        if (urls.isEmpty()) {
-            log.warn("Jsoup으로 URL을 찾지 못함. Playwright로 재시도: {}", url);
-        } else {
-            log.warn("Jsoup으로 찾은 URL이 너무 적음 ({} < {}). Playwright로 재시도: {}",
-                    urls.size(), MIN_URL_THRESHOLD, url);
-        }
-
-        urls = playwrightStrategy.extractUrls(url);
+    private List<String> extractUrls(String url) {
+        List<String> urls = playwrightStrategy.extractUrls(url);
 
         if (!urls.isEmpty()) {
             log.info("Playwright로 URL 추출 성공: {} URLs", urls.size());
         } else {
-            log.error("모든 크롤링 전략 실패: {}", url);
+            log.warn("URL 추출 실패: {}", url);
         }
 
         return urls;

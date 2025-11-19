@@ -38,34 +38,56 @@ public class KafkaProducerConfig {
     }
 
     /**
-     * URL 크롤링 이벤트 토픽 - 병렬 처리를 위해 8개 파티션 설정
+     * URL 크롤링 이벤트 토픽 - m7i-flex.large (2 vCPU) 최적화
      */
     @Bean
     public NewTopic urlCrawlEventsTopic() {
         return TopicBuilder.name(KafkaTopics.URL_CRAWL_EVENTS)
-                .partitions(8)
+                .partitions(6)  // concurrency 6 (Playwright 네트워크 I/O 대기)
                 .replicas(1)
                 .build();
     }
 
     /**
-     * URL 발견 이벤트 토픽 - 병렬 처리를 위해 4개 파티션 설정
+     * URL 발견 이벤트 토픽 - m7i-flex.large (2 vCPU) 최적화
      */
     @Bean
     public NewTopic urlDiscoveredEventsTopic() {
         return TopicBuilder.name(KafkaTopics.URL_DISCOVERED_EVENTS)
-                .partitions(4)
+                .partitions(3)  // concurrency 3 (DB+Redis 배치 I/O)
                 .replicas(1)
                 .build();
     }
 
     /**
-     * 추출 시작 이벤트 토픽 - 순차 처리용 1개 파티션
+     * 추출 시작 이벤트 토픽 - m7i-flex.large (2 vCPU) 최적화
      */
     @Bean
     public NewTopic extractionStartedEventsTopic() {
         return TopicBuilder.name(KafkaTopics.EXTRACTION_STARTED_EVENTS)
-                .partitions(1)
+                .partitions(1)  // concurrency 1 (최초 시작 이벤트, 빈도 낮음)
+                .replicas(1)
+                .build();
+    }
+
+    /**
+     * AI 분석 요청 이벤트 토픽 - m7i-flex.large (2 vCPU) 최적화
+     */
+    @Bean
+    public NewTopic urlAnalysisRequestEventsTopic() {
+        return TopicBuilder.name(KafkaTopics.URL_ANALYSIS_REQUEST_EVENTS)
+                .partitions(4)  // concurrency 4 (가벼운 HTTP 요청)
+                .replicas(1)
+                .build();
+    }
+
+    /**
+     * 접근성 판정 결과 토픽 - m7i-flex.large (2 vCPU) 최적화
+     */
+    @Bean
+    public NewTopic accessibilityJudgedEventsTopic() {
+        return TopicBuilder.name(KafkaTopics.ACCESSIBILITY_JUDGED_EVENTS)
+                .partitions(3)  // concurrency 3 (DB 저장 I/O)
                 .replicas(1)
                 .build();
     }

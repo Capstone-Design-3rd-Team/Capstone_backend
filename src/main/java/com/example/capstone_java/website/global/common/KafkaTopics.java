@@ -4,6 +4,7 @@ public final class KafkaTopics {
     public static final String EXTRACTION_STARTED_EVENTS = "extraction-started-events";
     public static final String URL_CRAWL_EVENTS = "url-crawl-events";
     public static final String URL_DISCOVERED_EVENTS = "url-discovered-events";
+    public static final String URL_ANALYSIS_REQUEST_EVENTS = "url-analysis-request-events";
     public static final String ACCESSIBILITY_JUDGED_EVENTS = "accessibility-judged-events";
     public static final String FAILED_EVENTS_DLQ = "failed-events-dlq";
 

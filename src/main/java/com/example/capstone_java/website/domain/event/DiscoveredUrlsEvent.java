@@ -37,15 +37,6 @@ public record DiscoveredUrlsEvent(
         );
     }
 
-    /**
-     * 파티션 키: parentUrl을 사용하여 분산
-     * - 같은 부모 URL에서 발견된 자식 URL들은 순서 보장
-     * - 다른 부모 URL들은 병렬 처리
-     */
-    public String getPartitionKey() {
-        return parentUrl != null ? parentUrl : "root";
-    }
-
     public int urlCount() {
         return discoveredUrls.size();
     }

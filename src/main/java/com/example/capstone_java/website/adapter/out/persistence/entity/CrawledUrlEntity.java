@@ -10,7 +10,11 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "crawled_url")
+@Table(name = "crawled_url", indexes = {
+    @Index(name = "idx_website_id", columnList = "website_id"),
+    @Index(name = "idx_status", columnList = "status"),
+    @Index(name = "idx_website_status", columnList = "website_id, status")
+})
 @Getter
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
 public class CrawledUrlEntity {

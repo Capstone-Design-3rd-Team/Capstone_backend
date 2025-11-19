@@ -29,14 +29,14 @@ public class ExtractionEventConsumer {
     private final EventDispatcher eventDispatcher;
 
     @RetryableTopic(
-        attempts = "3",
+        attempts = "1",
         backoff = @Backoff(delay = 1000, multiplier = 2.0),
         dltTopicSuffix = ".dlt"
     )
     @KafkaListener(
         topics = KafkaTopics.EXTRACTION_STARTED_EVENTS,
         groupId = KafkaGroups.WEBSITE_EXTRACTION_GROUP,
-        concurrency = "2"
+        concurrency = "1"  // m7i-flex.large (2 vCPU): 최초 시작 이벤트, 빈도 낮음
     )
     public void handleExtractionStartedEvent(
         @Payload ExtractionStartedEvent event,

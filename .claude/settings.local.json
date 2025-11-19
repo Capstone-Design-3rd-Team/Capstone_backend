@@ -1,7 +1,14 @@
 {
   "permissions": {
     "allow": [
-      "Bash(curl:*)"
+      "Bash(curl:*)",
+      "Bash(./gradlew test:*)",
+      "Bash(./gradlew clean test:*)",
+      "Bash(./gradlew clean:*)",
+      "Bash(git add:*)",
+      "Bash(docker-compose:*)",
+      "Bash(docker ps:*)",
+      "Bash(cat:*)"
     ],
     "deny": [],
     "ask": []

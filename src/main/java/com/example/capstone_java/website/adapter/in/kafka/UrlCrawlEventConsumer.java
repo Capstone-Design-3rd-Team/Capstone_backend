@@ -4,6 +4,8 @@ import com.example.capstone_java.website.application.service.CrawlExecutionServi
 import com.example.capstone_java.website.domain.event.UrlCrawlEvent;
 import com.example.capstone_java.website.global.common.KafkaGroups;
 import com.example.capstone_java.website.global.common.KafkaTopics;
+import com.microsoft.playwright.PlaywrightException;
+import com.microsoft.playwright.TimeoutError;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.kafka.annotation.KafkaListener;
@@ -23,14 +25,21 @@ public class UrlCrawlEventConsumer {
     private final CrawlExecutionService crawlExecutionService;
 
     @RetryableTopic(
-        attempts = "3",
-        backoff = @Backoff(delay = 1000, multiplier = 2.0),
-        dltTopicSuffix = ".dlt"
+            attempts = "1",
+            backoff = @Backoff(delay = 1000, multiplier = 2.0),
+            dltTopicSuffix = ".dlt",
+            // [중요] 아래 예외들이 발생하면 재시도하지 말고 즉시 포기(DLT로 직행)해라!
+            exclude = {
+                    PlaywrightException.class, // Playwright 관련 모든 에러 (브라우저 크래시, 객체 손상 등)
+                    TimeoutError.class, // Playwright 타임아웃 (느린 페이지, 무응답 등)
+                    IllegalArgumentException.class, // 잘못된 URL 등
+                    NullPointerException.class // 코드 버그 등
+            }
     )
     @KafkaListener(
         topics = KafkaTopics.URL_CRAWL_EVENTS,
         groupId = KafkaGroups.URL_PROCESSING_GROUP,
-        concurrency = "20"  // 20개 스레드로 병렬 처리
+        concurrency = "4"  // Playwright 브라우저 풀 크기와 동일
     )
     public void handleUrlCrawlEvent(
         @Payload UrlCrawlEvent event,
