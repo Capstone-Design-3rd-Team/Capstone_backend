@@ -3,6 +3,7 @@ package com.example.capstone_java.website.adapter.out;
 import com.example.capstone_java.website.adapter.out.mapper.AccessibilityReportMapper;
 import com.example.capstone_java.website.adapter.out.persistence.entity.AccessibilityReportEntity;
 import com.example.capstone_java.website.adapter.out.persistence.repository.AccessibilityReportJpaRepository;
+import com.example.capstone_java.website.application.port.out.GetAccessibilityReportPort;
 import com.example.capstone_java.website.application.port.out.SaveAccessibilityReportPort;
 import com.example.capstone_java.website.domain.entity.AccessibilityReport;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
@@ -15,14 +16,14 @@ import java.util.Optional;
 import java.util.stream.Collectors;
 
 /**
- * 접근성 분석 보고서 저장 어댑터
+ * 접근성 분석 보고서 어댑터
  *
- * 도메인 객체(AccessibilityReport)를 JPA 엔티티로 변환하여 저장
+ * 도메인 객체(AccessibilityReport)를 JPA 엔티티로 변환하여 저장 및 조회
  */
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class AccessibilityReportAdapter implements SaveAccessibilityReportPort {
+public class AccessibilityReportAdapter implements SaveAccessibilityReportPort, GetAccessibilityReportPort {
 
     private final AccessibilityReportJpaRepository repository;
     private final AccessibilityReportMapper mapper;
@@ -65,5 +66,16 @@ public class AccessibilityReportAdapter implements SaveAccessibilityReportPort {
     @Override
     public long countByWebsiteId(WebsiteId websiteId) {
         return repository.countByWebsiteId(websiteId.getId());
+    }
+
+    @Override
+    public List<AccessibilityReport> findAllByWebsiteId(WebsiteId websiteId) {
+        log.debug("웹사이트 모든 분석 보고서 조회 - WebsiteId: {}", websiteId.getId());
+
+        List<AccessibilityReportEntity> entities = repository.findByWebsiteIdOrderByAnalyzedAtDesc(websiteId.getId());
+
+        return entities.stream()
+                .map(mapper::toDomainWithId)
+                .collect(Collectors.toList());
     }
 }

@@ -11,10 +11,15 @@ import java.time.LocalDateTime;
 import java.util.UUID;
 
 @Entity
-@Table(name = "website", indexes = {
-    @Index(name = "idx_extraction_status", columnList = "extractionStatus"),
-    @Index(name = "idx_created_at", columnList = "createdAt")
-})
+@Table(name = "website",
+    indexes = {
+        @Index(name = "idx_extraction_status", columnList = "extractionStatus"),
+        @Index(name = "idx_created_at", columnList = "createdAt")
+    },
+    uniqueConstraints = {
+        @UniqueConstraint(name = "uk_client_url", columnNames = {"clientId", "mainUrl"})
+    }
+)
 @Getter
 @AllArgsConstructor
 @NoArgsConstructor(access = AccessLevel.PROTECTED)
@@ -25,6 +30,9 @@ public class WebsiteEntity {
 
     @Column(nullable = false, length = 2048)
     private String mainUrl;
+
+    @Column(nullable = false, length = 255)
+    private String clientId;
 
     @Enumerated(EnumType.STRING)
     @Column(nullable = false)
