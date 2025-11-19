@@ -45,6 +45,7 @@ public class AnalysisResultConsumer {
     private final SaveAccessibilityReportPort saveAccessibilityReportPort;
     private final GetWebsitePort getWebsitePort;
     private final ObjectMapper objectMapper;
+    private final com.example.capstone_java.website.application.service.AnalysisProgressService analysisProgressService;
 
     @RetryableTopic(
         attempts = "3",
@@ -107,6 +108,9 @@ public class AnalysisResultConsumer {
 
             log.info("AI 분석 결과 저장 완료 - Report ID: {}, WebsiteId: {}, URL: {}, Score: {}",
                     savedReport.getId(), websiteId.getId(), savedReport.getUrl(), savedReport.getAccessibilityScore());
+
+            // 진행 상황 체크 및 SSE 전송
+            analysisProgressService.checkProgressAndNotify(websiteId);
 
             // 저장 성공 후 메시지 처리 완료
             acknowledgment.acknowledge();

@@ -15,55 +15,59 @@ import java.util.stream.Collectors;
 public final class Website {
     private final WebsiteId websiteId;
     private final String mainUrl;
+    private final String clientId;  // 클라이언트 식별자 (프론트에서 생성)
     private final ExtractionStatus extractionStatus;
     private final CrawlConfiguration crawlConfig;
     private final LocalDateTime createdAt;
 
     // MapStruct용 public 생성자 (하나만 유지)
-    public Website(WebsiteId websiteId, String mainUrl, ExtractionStatus extractionStatus, CrawlConfiguration crawlConfig, LocalDateTime createdAt) {
+    public Website(WebsiteId websiteId, String mainUrl, String clientId, ExtractionStatus extractionStatus, CrawlConfiguration crawlConfig, LocalDateTime createdAt) {
         this.websiteId = websiteId;
         this.mainUrl = mainUrl;
+        this.clientId = clientId;
         this.extractionStatus = extractionStatus;
         this.crawlConfig = crawlConfig;
         this.createdAt = createdAt;
     }
 
-    // 랜덤 id를 제외하고, 메인url, url 상태, 해당 url을 설정, url 생성시간을 생성
-    public static Website create(final String mainUrl) {
+    // 랜덤 id를 제외하고, 메인url, clientId, url 상태, 해당 url을 설정, url 생성시간을 생성
+    public static Website create(final String mainUrl, final String clientId) {
         return new Website(
                 null,
                 mainUrl,
+                clientId,
                 ExtractionStatus.PENDING,
                 CrawlConfiguration.defaultConfiguration(),
                 LocalDateTime.now());
     }
 
-    public static Website create(final String mainUrl, final CrawlConfiguration crawlConfig) {
-        return new Website(null, mainUrl, ExtractionStatus.PENDING, crawlConfig, LocalDateTime.now());
+    public static Website create(final String mainUrl, final String clientId, final CrawlConfiguration crawlConfig) {
+        return new Website(null, mainUrl, clientId, ExtractionStatus.PENDING, crawlConfig, LocalDateTime.now());
     }
 
     public static Website withId(final WebsiteId websiteId,
                                  final String mainUrl,
+                                 final String clientId,
                                  final ExtractionStatus extractionStatus,
                                  final CrawlConfiguration crawlConfig,
                                  final LocalDateTime creationDateTime)
     {
-        return new Website(websiteId, mainUrl, extractionStatus, crawlConfig, creationDateTime);
+        return new Website(websiteId, mainUrl, clientId, extractionStatus, crawlConfig, creationDateTime);
     }
 
     public Website startExtraction() {
         if (this.extractionStatus != ExtractionStatus.PENDING) {
             throw new IllegalStateException("추출이 이미 시작되었습니다.");
         }
-        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.PROGRESS, this.crawlConfig, this.createdAt);
+        return new Website(this.websiteId, this.mainUrl, this.clientId, ExtractionStatus.PROGRESS, this.crawlConfig, this.createdAt);
     }
 
     public Website markCompleted() {
-        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.COMPLETE, this.crawlConfig, this.createdAt);
+        return new Website(this.websiteId, this.mainUrl, this.clientId, ExtractionStatus.COMPLETE, this.crawlConfig, this.createdAt);
     }
 
     public Website markFailed() {
-        return new Website(this.websiteId, this.mainUrl, ExtractionStatus.FAILED, this.crawlConfig, this.createdAt);
+        return new Website(this.websiteId, this.mainUrl, this.clientId, ExtractionStatus.FAILED, this.crawlConfig, this.createdAt);
     }
 
     public boolean isCompleted() {

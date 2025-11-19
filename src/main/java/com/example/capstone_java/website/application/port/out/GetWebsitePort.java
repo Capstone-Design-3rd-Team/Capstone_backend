@@ -7,4 +7,9 @@ import java.util.Optional;
 
 public interface GetWebsitePort {
     Optional<Website> findById(WebsiteId websiteId);
+
+    /**
+     * clientId와 mainUrl로 Website 조회 (중복 체크용)
+     */
+    Optional<Website> findByClientIdAndMainUrl(String clientId, String mainUrl);
 }

@@ -47,3 +47,5 @@ CLAUDE.md
 mysql_data/
 mongodb_data/
 redis_data/
+
+/docs/*

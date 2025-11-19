@@ -31,4 +31,10 @@ public class WebsiteAdapter implements GetWebsitePort,SaveWebsitePort {
         return websiteJpaRepository.findById(websiteId.getId())
                 .map(websiteMapper::toWebsiteDomain);
     }
+
+    @Override
+    public Optional<Website> findByClientIdAndMainUrl(String clientId, String mainUrl) {
+        return websiteJpaRepository.findByClientIdAndMainUrl(clientId, mainUrl)
+                .map(websiteMapper::toWebsiteDomain);
+    }
 }

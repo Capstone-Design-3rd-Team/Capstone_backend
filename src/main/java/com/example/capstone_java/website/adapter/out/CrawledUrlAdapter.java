@@ -3,6 +3,7 @@ package com.example.capstone_java.website.adapter.out;
 import com.example.capstone_java.website.adapter.out.mapper.CrawledUrlMapper;
 import com.example.capstone_java.website.adapter.out.persistence.entity.CrawledUrlEntity;
 import com.example.capstone_java.website.adapter.out.persistence.repository.CrawledUrlJpaRepository;
+import com.example.capstone_java.website.application.port.out.GetCrawledUrlPort;
 import com.example.capstone_java.website.application.port.out.SaveCrawledUrlPort;
 import com.example.capstone_java.website.domain.entity.CrawledUrl;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
@@ -17,7 +18,7 @@ import java.util.stream.Collectors;
 @Slf4j
 @Component
 @RequiredArgsConstructor
-public class CrawledUrlAdapter implements SaveCrawledUrlPort {
+public class CrawledUrlAdapter implements SaveCrawledUrlPort, GetCrawledUrlPort {
 
     private final CrawledUrlJpaRepository crawledUrlRepository;
     private final CrawledUrlMapper crawledUrlMapper;

@@ -10,6 +10,12 @@ import com.example.capstone_java.website.application.port.out.SaveCrawledUrlPort
 import com.example.capstone_java.website.domain.entity.CrawledUrl;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.media.Schema;
+import io.swagger.v3.oas.annotations.responses.ApiResponse;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
+import io.swagger.v3.oas.annotations.tags.Tag;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -19,6 +25,7 @@ import org.springframework.web.bind.annotation.*;
 import java.util.List;
 import java.util.UUID;
 
+@Tag(name = "Website Crawling", description = "웹사이트 등록 및 크롤링 관리 API")
 @Slf4j
 @RestController
 @RequestMapping("/api/websites")
@@ -32,13 +39,25 @@ public class WebsiteController {
     /**
      * 웹사이트 크롤링 시작
      */
+    @Operation(
+            summary = "크롤링 시작 요청",
+            description = "분석할 웹사이트 URL을 등록하고 크롤링(URL 추출) 작업을 시작합니다."
+    )
+    @ApiResponses({
+            @ApiResponse(
+                    responseCode = "200",
+                    description = "크롤링 시작 성공",
+                    content = @Content(schema = @Schema(implementation = CrawlStartResponse.class))
+            ),
+            @ApiResponse(responseCode = "400", description = "잘못된 URL 형식이거나 요청 실패")
+    })
     @PostMapping("/crawl")
     public ResponseEntity<CrawlStartResponse> startCrawling(@RequestBody @Valid CrawlStartRequest request)
     {
         try {
-            log.info("크롤링 시작 요청: URL={}", request.mainUrl());
+            log.info("크롤링 시작 요청: clientId={}, URL={}", request.clientId(), request.mainUrl());
 
-            WebsiteId websiteId = extractUrlsUseCase.execute(request.mainUrl());
+            WebsiteId websiteId = extractUrlsUseCase.execute(request.clientId(), request.mainUrl());
 
             return ResponseEntity.ok(new CrawlStartResponse(
                 websiteId.getId(),
@@ -47,7 +66,7 @@ public class WebsiteController {
             ));
 
         } catch (Exception e) {
-            log.error("크롤링 시작 실패: URL={}, Error={}", request.mainUrl(), e.getMessage(), e);
+            log.error("크롤링 시작 실패: clientId={}, URL={}, Error={}", request.clientId(), request.mainUrl(), e.getMessage(), e);
             return ResponseEntity.badRequest()
                     .body(new CrawlStartResponse(null, request.mainUrl(), "크롤링 시작 실패: " + e.getMessage()));
         }
