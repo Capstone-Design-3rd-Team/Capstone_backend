@@ -4,7 +4,8 @@ import com.example.capstone_java.website.application.port.out.CrawlStrategy;
 import com.microsoft.playwright.Browser;
 import com.microsoft.playwright.BrowserContext;
 import com.microsoft.playwright.Page;
-import com.microsoft.playwright.PlaywrightException;
+import com.microsoft.playwright.Response;
+import com.microsoft.playwright.options.WaitUntilState;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Component;
@@ -49,69 +50,178 @@ public class PlaywrightStrategy implements CrawlStrategy {
     // 메뉴 코드 패턴 (예: HOMBKI030000)
     private static final Pattern MENU_CODE_PATTERN = Pattern.compile("[A-Z]{3,}[A-Z0-9]{6,}");
 
-    @Override
-    public List<String> extractUrls(String url) {
-        int maxRetries = 3;
-        long baseDelay = 500; // 0.5초
+    // 타임아웃 설정 (밀리초) - EC2 환경 최적화
+    private static final int PAGE_LOAD_TIMEOUT_MS = 8_000;   // 8초 (브라우저 풀 고갈 방지)
+    private static final int NAVIGATION_TIMEOUT_MS = 10_000;  // 10초 (리다이렉트 고려)
+    private static final int DOM_WAIT_TIMEOUT_MS = 1_000;     // 1초 (SPA 로딩 대기)
 
-        for (int attempt = 1; attempt <= maxRetries; attempt++) {
-            try {
-                return doExtractUrls(url);
+    // URL 차단 패턴 (소문자로 비교)
+    private static final List<String> BLOCKED_URL_PATTERNS = List.of(
+            // 인증 관련
+            "logout", "signout", "sign-out", "sign_out",
+            "login", "signin", "sign-in", "sign_in",
+            "auth/", "sso/", "saml/",
 
-            } catch (PlaywrightException e) {
-                if (attempt == maxRetries) {
-                    log.error("Playwright 크롤링 최종 실패 - URL: {}, 재시도 {}/{}회 모두 실패, Error: {}",
-                             url, maxRetries, maxRetries, e.getMessage());
-                    return List.of();
-                }
+            // 프로토콜
+            "javascript:", "mailto:", "tel:", "ftp:",
 
-                long delay = baseDelay * attempt; // 0.5초, 1초, 1.5초
-                log.warn("Playwright 일시적 실패 - URL: {}, 재시도 {}/{}, {}ms 후 재시도, Error: {}",
-                         url, attempt, maxRetries, delay, e.getMessage());
+            // LMS 특정 차단 (실제 문제 발생한 URL)
+            "total_survey_list_form.acl",  // 문제 발생한 설문 페이지
+            "total_survey",                // 설문 관련 전체
+            ".acl?.*logout", ".acl?.*login",
 
-                try {
-                    Thread.sleep(delay);
-                } catch (InterruptedException ie) {
-                    Thread.currentThread().interrupt();
-                    log.error("재시도 대기 중 인터럽트 발생 - URL: {}", url);
-                    return List.of();
-                }
+            // 파일 다운로드 (크롤링 불필요)
+            ".pdf", ".zip", ".hwp", ".xlsx", ".xls", ".ppt", ".pptx",
+            ".doc", ".docx", ".txt", ".csv",
+            ".jpg", ".jpeg", ".png", ".gif", ".bmp", ".svg",
+            ".mp4", ".avi", ".mov", ".mp3", ".wav",
+
+            // 기타
+            "void(0)", "#"
+    );
+
+    /**
+     * URL이 차단 패턴에 해당하는지 검사
+     */
+    private boolean shouldBlockUrl(String url) {
+        if (url == null || url.trim().isEmpty()) {
+            return true;
+        }
+
+        String lowerUrl = url.toLowerCase();
+        for (String pattern : BLOCKED_URL_PATTERNS) {
+            if (lowerUrl.contains(pattern)) {
+                log.debug("🚫 차단된 URL 패턴 매칭: '{}' in {}", pattern, url);
+                return true;
             }
         }
-        return List.of();
+        return false;
     }
 
     /**
-     * 실제 URL 추출 로직 (재시도 대상)
+     * URL 추출 (절대 예외를 던지지 않음 - 항상 List 반환)
+     *
+     * 안전 장치:
+     * 1. URL 패턴 필터링으로 1차 차단
+     * 2. 모든 예외를 catch하여 빈 리스트 반환
+     * 3. 손상된 브라우저는 폐기 (풀에 반납 안 함)
+     * 4. 풀 복구는 HealthCheck 스케줄러에 맡김
      */
-    private List<String> doExtractUrls(String url) {
+    @Override
+    public List<String> extractUrls(String url) {
+        // 1차 방어선: URL 필터링
+        if (shouldBlockUrl(url)) {
+            log.warn("🚫 필터링된 URL (스킵): {}", url);
+            return List.of();
+        }
+
+        // 2차 방어선: 안전한 크롤링 (절대 예외를 던지지 않음)
+        return doExtractUrlsSafe(url);
+    }
+
+    /**
+     * 안전한 URL 추출 로직 (절대 예외를 던지지 않음)
+     */
+    private List<String> doExtractUrlsSafe(String url) {
+        Browser browser = null;
+        boolean browserAcquired = false;
+
+        try {
+            // 1. 브라우저 대여
+            browser = browserPool.take();
+            browserAcquired = true;
+            log.debug("🔒 브라우저 획득 - URL: {}, 풀 남은 개수: {}", url, browserPool.size());
+
+            // 2. 브라우저 상태 확인
+            if (!isBrowserHealthy(browser)) {
+                log.warn("⚠️ 손상된 브라우저 감지 -> 폐기 처분");
+                closeBrowserSafely(browser);
+                browserAcquired = false; // 반납하지 않음 (폐기)
+                return List.of(); // 이번 요청은 실패 처리 (재시도 안 함)
+            }
+
+            // 3. 크롤링 수행
+            List<String> result = performCrawlingWithBrowser(browser, url);
+            log.debug("🔓 브라우저 작업 완료 - URL: {}, 추출 URL: {}개", url, result.size());
+            return result;
+
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            log.error("❌ 브라우저 획득 중단 (인터럽트) - URL: {}", url);
+            return List.of();
+
+        } catch (Exception e) {
+            // [핵심] 어떤 에러가 나도 로그만 찍고 빈 리스트 반환 -> Kafka 재시도 방지
+            log.error("❌ 크롤링 실패 (URL: {}): {}", url, e.getMessage());
+
+            // 에러가 났다는 건 브라우저가 오염됐을 가능성 높음 -> 폐기 결정
+            if (browserAcquired && browser != null) {
+                log.warn("⚠️ 에러 발생한 브라우저 폐기 처분");
+                closeBrowserSafely(browser);
+                browserAcquired = false; // 반납하지 않음
+            }
+
+            return List.of(); // 빈 리스트 반환으로 Kafka는 "정상 처리"로 인식
+
+        } finally {
+            // 4. 정상적인 브라우저만 반납
+            if (browserAcquired && browser != null) {
+                try {
+                    // 반납 전 한 번 더 체크
+                    if (isBrowserHealthy(browser)) {
+                        browserPool.offer(browser);
+                        log.debug("🔓 브라우저 반납 완료 - 풀 크기: {}", browserPool.size());
+                    } else {
+                        log.warn("⚠️ 반납 직전 브라우저 손상 감지 -> 폐기");
+                        closeBrowserSafely(browser);
+                    }
+                } catch (Exception e) {
+                    log.error("브라우저 반납 중 오류", e);
+                }
+            }
+        }
+    }
+
+
+    /**
+     * 브라우저를 독점하여 크롤링 수행
+     * 에러 발생 시 예외를 던지며, 호출자(doExtractUrlsSafe)가 처리함
+     */
+    private List<String> performCrawlingWithBrowser(Browser browser, String url) {
         Set<String> uniqueUrls = new LinkedHashSet<>();
         String baseUrl = extractBaseUrl(url);
 
-        Browser browser = null;
+        BrowserContext context = null;
+        Page page = null;
+
         try {
-            // 1. 브라우저 풀에서 브라우저 가져오기 (없으면 대기)
-            browser = browserPool.take();
-            log.debug("브라우저 풀에서 브라우저 획득 (남은 개수: {})", browserPool.size());
+            // Context와 Page 생성
+            context = browser.newContext();
+            context.setDefaultTimeout(PAGE_LOAD_TIMEOUT_MS);
 
-            // 2. BrowserContext와 Page는 가벼우므로 매번 생성/종료
-            try (BrowserContext context = browser.newContext();
-                 Page page = context.newPage()) {
+            page = context.newPage();
+            page.setDefaultTimeout(PAGE_LOAD_TIMEOUT_MS);
+            page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
 
-                // 3. 페이지 타임아웃 설정 (무한 대기 방지)
-                page.setDefaultTimeout(15_000); // 15초
+            log.debug("Playwright 네비게이션 시작: {}", url);
 
-                log.debug("Playwright로 네비게이션 시작: {}", url);
+            // 페이지로 이동 (에러 발생 시 예외 던짐)
+            Response response = page.navigate(url, new Page.NavigateOptions()
+                    .setTimeout(NAVIGATION_TIMEOUT_MS)
+                    .setWaitUntil(WaitUntilState.DOMCONTENTLOADED));
 
-                // 4. 페이지로 이동 (Playwright는 기본적으로 'load' 이벤트까지 자동 대기)
-                page.navigate(url);
+            // HTTP 상태 코드 체크
+            if (response != null && response.status() >= 400) {
+                log.warn("⚠️ HTTP 에러 응답 - Status: {}, URL: {}", response.status(), url);
+                return List.of(); // HTTP 에러는 빈 리스트 반환
+            }
 
-                // SPA 사이트가 완전히 로드되도록 추가 대기
-                page.waitForTimeout(2000); // 2초 대기
+            // SPA 로딩 대기
+            page.waitForTimeout(DOM_WAIT_TIMEOUT_MS);
 
-                log.debug("Playwright로 DOM 분석 시작: {}", url);
+            log.debug("Playwright DOM 분석 시작: {}", url);
 
-            // 4. JavaScript를 사용하여 모든 링크와 클릭 가능한 요소에서 URL 추출
+            // JavaScript로 URL 추출
             Object result = page.evaluate("""
                 () => {
                     const urls = new Set();
@@ -158,39 +268,90 @@ public class PlaywrightStrategy implements CrawlStrategy {
                 }
                 """);
 
-                // 5. 추출된 링크 처리
-                if (result instanceof List<?>) {
-                    for (Object item : (List<?>) result) {
-                        if (item instanceof String) {
-                            String href = (String) item;
-                            String processedUrl = processUrl(href, baseUrl);
-                            if (processedUrl != null) {
-                                uniqueUrls.add(processedUrl);
-                            }
+            // 5. 추출된 링크 처리
+            if (result instanceof List<?>) {
+                for (Object item : (List<?>) result) {
+                    if (item instanceof String) {
+                        String href = (String) item;
+                        String processedUrl = processUrl(href, baseUrl);
+                        if (processedUrl != null) {
+                            uniqueUrls.add(processedUrl);
                         }
                     }
                 }
-
-                log.info("Playwright가 {}에서 {}개의 URL 추출", url, uniqueUrls.size());
             }
 
+            log.info("✅ Playwright가 {}에서 {}개의 URL 추출", url, uniqueUrls.size());
             return new ArrayList<>(uniqueUrls);
 
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            log.error("브라우저 풀에서 브라우저 획득 중 인터럽트 발생", e);
-            return List.of();
-        } catch (PlaywrightException e) {
-            // 재시도를 위해 예외를 다시 던짐
-            throw e;
         } finally {
-            // 6. 반드시 브라우저를 풀에 반환
-            if (browser != null) {
-                browserPool.offer(browser);
-                log.debug("브라우저 풀에 반환 완료 (현재 개수: {})", browserPool.size());
+            // ========================================
+            // 무조건 Context와 Page 정리 (브라우저를 깨끗한 상태로)
+            // ========================================
+            closePageSafely(page);
+            closeContextSafely(context);
+        }
+    }
+
+    /**
+     * Page 안전 종료
+     */
+    private void closePageSafely(Page page) {
+        if (page != null) {
+            try {
+                if (!page.isClosed()) {
+                    page.close();
+                }
+            } catch (Exception e) {
+                log.debug("Page 종료 중 오류 무시: {}", e.getMessage());
             }
         }
     }
+
+    /**
+     * BrowserContext 안전 종료
+     */
+    private void closeContextSafely(BrowserContext context) {
+        if (context != null) {
+            try {
+                context.close();
+            } catch (Exception e) {
+                log.debug("BrowserContext 종료 중 오류 무시: {}", e.getMessage());
+            }
+        }
+    }
+
+
+    /**
+     * 브라우저 상태 확인
+     */
+    private boolean isBrowserHealthy(Browser browser) {
+        try {
+            // isConnected()로 브라우저 프로세스가 살아있는지 확인
+            return browser.isConnected();
+        } catch (Exception e) {
+            log.warn("브라우저 상태 확인 실패: {}", e.getMessage());
+            return false;
+        }
+    }
+
+    /**
+     * 안전하게 브라우저 종료
+     */
+    private void closeBrowserSafely(Browser browser) {
+        if (browser != null) {
+            try {
+                if (browser.isConnected()) {
+                    browser.close();
+                } else {
+                    log.debug("브라우저가 이미 연결 해제됨, close() 스킵");
+                }
+            } catch (Exception e) {
+                log.warn("브라우저 종료 중 오류 무시: {}", e.getMessage());
+            }
+        }
+    }
+
 
     /**
      * URL 처리: JavaScript 링크를 실제 URL로 변환

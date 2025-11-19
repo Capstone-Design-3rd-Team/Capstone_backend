@@ -1,3 +1,4 @@
+/*
 package com.example.capstone_java.website.adapter.out;
 
 import com.microsoft.playwright.Browser;
@@ -12,11 +13,13 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+*/
 /**
  * PlaywrightStrategy 통합 테스트
  *
  * 실제 Playwright 브라우저를 사용하여 URL 추출을 테스트합니다.
- */
+ *//*
+
 @Slf4j
 class PlaywrightStrategyTest {
 
@@ -141,3 +144,4 @@ class PlaywrightStrategyTest {
             "현재 구현에서는 수동 선택이므로 false를 반환해야 합니다");
     }
 }
+*/

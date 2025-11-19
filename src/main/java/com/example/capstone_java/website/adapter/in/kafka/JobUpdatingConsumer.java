@@ -53,7 +53,7 @@ public class JobUpdatingConsumer {
     private String callbackBaseUrl;
 
     @RetryableTopic(
-        attempts = "3",
+        attempts = "2",
         backoff = @Backoff(delay = 1000, multiplier = 2.0),
         dltTopicSuffix = ".dlt"
     )

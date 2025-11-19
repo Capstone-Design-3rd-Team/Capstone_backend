@@ -70,14 +70,17 @@ app:
 # Playwright 브라우저 풀 설정
 playwright:
   pool:
-    size: 4  # m7i-flex.large (8GB) 최적화
+    size: 4  # EC2 안정성 고려 (2 -> 4로 복원)
 
 logging:
   level:
     com.example.capstone_java: WARN
-    org.springframework.kafka: WARN
+    org.springframework.kafka: ERROR  # Kafka 경고 억제 (WARN -> ERROR)
     org.apache.kafka: ERROR  # Kafka Client 로그 최소화
     org.hibernate: WARN
+    # Kafka 파티션 경고 억제
+    org.springframework.kafka.support.LoggingProducerListener: ERROR
+    org.springframework.kafka.listener: ERROR
   pattern:
     console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
   file:

@@ -29,7 +29,7 @@ public class ExtractionEventConsumer {
     private final EventDispatcher eventDispatcher;
 
     @RetryableTopic(
-        attempts = "3",
+        attempts = "1",
         backoff = @Backoff(delay = 1000, multiplier = 2.0),
         dltTopicSuffix = ".dlt"
     )

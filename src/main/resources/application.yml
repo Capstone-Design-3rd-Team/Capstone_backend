@@ -48,7 +48,7 @@ app:
 # Playwright 브라우저 풀 설정
 playwright:
   pool:
-    size: 3  # 로컬 개발 환경
+    size: 4  # 로컬 개발 환경 (동시 요청 처리 개선)
 
 logging:
   level:
