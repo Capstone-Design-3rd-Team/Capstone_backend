@@ -31,10 +31,18 @@ public interface CrawledUrlJpaRepository extends JpaRepository<CrawledUrlEntity,
     boolean existsByWebsiteIdAndUrl(UUID websiteId, String url);
 
     /**
-     * 특정 웹사이트의 크롤링된 URL 총 개수 조회
+     * 특정 웹사이트의 크롤링된 URL 총 개수 조회 (모든 상태 포함)
      */
     long countByWebsiteId(UUID websiteId);
 
-    // [추가] 특정 상태(FAILED)인 URL 개수 조회
+    /**
+     * 특정 상태인 URL 개수 조회 (FAILED, CRAWLED 등)
+     */
     long countByWebsiteIdAndStatus(UUID websiteId, CrawlStatus status);
+
+    /**
+     * AI 분석 가능한 URL 개수 조회 (DISCOVERED + CRAWLED만, FAILED 제외)
+     */
+    @Query("SELECT COUNT(c) FROM CrawledUrlEntity c WHERE c.websiteId = :websiteId AND c.status IN ('DISCOVERED', 'CRAWLED')")
+    long countAnalyzableUrlsByWebsiteId(@Param("websiteId") UUID websiteId);
 }

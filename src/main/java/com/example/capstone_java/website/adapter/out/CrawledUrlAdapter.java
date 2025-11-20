@@ -81,6 +81,11 @@ public class CrawledUrlAdapter implements SaveCrawledUrlPort, GetCrawledUrlPort 
     }
 
     @Override
+    public long countAnalyzableUrls(WebsiteId websiteId) {
+        return crawledUrlRepository.countAnalyzableUrlsByWebsiteId(websiteId.getId());
+    }
+
+    @Override
     public long countCrawledUrls(WebsiteId websiteId) {
         return crawledUrlRepository.countByWebsiteIdAndStatus(websiteId.getId(), CrawlStatus.CRAWLED);
     }
