@@ -43,7 +43,7 @@ ai:
 # 애플리케이션 콜백 URL 설정
 app:
   callback:
-    base-url: ${APP_CALLBACK_BASE_URL:https://cb4ff1b1f029be.lhr.life}
+    base-url: ${APP_CALLBACK_BASE_URL:https://test:8080}
 
 # Playwright 브라우저 풀 설정
 playwright:

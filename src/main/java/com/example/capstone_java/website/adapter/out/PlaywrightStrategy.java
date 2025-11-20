@@ -56,19 +56,14 @@ public class PlaywrightStrategy implements CrawlStrategy {
     private static final int DOM_WAIT_TIMEOUT_MS = 1_000;     // 1초 (SPA 로딩 대기)
 
     // URL 차단 패턴 (소문자로 비교)
+    // 접근성 검사를 위해 login/logout 페이지도 포함 (GET 요청만 하므로 안전)
     private static final List<String> BLOCKED_URL_PATTERNS = List.of(
-            // 인증 관련
-            "logout", "signout", "sign-out", "sign_out",
-            "login", "signin", "sign-in", "sign_in",
-            "auth/", "sso/", "saml/",
-
             // 프로토콜
             "javascript:", "mailto:", "tel:", "ftp:",
 
             // LMS 특정 차단 (실제 문제 발생한 URL)
             "total_survey_list_form.acl",  // 문제 발생한 설문 페이지
             "total_survey",                // 설문 관련 전체
-            ".acl?.*logout", ".acl?.*login",
 
             // 파일 다운로드 (크롤링 불필요)
             ".pdf", ".zip", ".hwp", ".xlsx", ".xls", ".ppt", ".pptx",
@@ -231,7 +226,7 @@ public class PlaywrightStrategy implements CrawlStrategy {
 
             log.debug("Playwright DOM 분석 시작: {}", url);
 
-            // JavaScript로 URL 추출
+            // JavaScript로 URL 추출 (확장된 버전)
             Object result = page.evaluate("""
                 () => {
                     const urls = new Set();
@@ -271,6 +266,51 @@ public class PlaywrightStrategy implements CrawlStrategy {
                                          value.startsWith('javascript:'))) {
                                 urls.add(value);
                             }
+                        }
+                    });
+
+                    // 4. <form action> 속성
+                    document.querySelectorAll('form[action]').forEach(form => {
+                        const action = form.getAttribute('action');
+                        if (action && action.trim() !== '') {
+                            urls.add(action);
+                        }
+                    });
+
+                    // 5. <iframe src> 속성
+                    document.querySelectorAll('iframe[src]').forEach(iframe => {
+                        const src = iframe.getAttribute('src');
+                        if (src && src.trim() !== '') {
+                            urls.add(src);
+                        }
+                    });
+
+                    // 6. data-* 속성 (data-url, data-href, data-link, data-target 등)
+                    document.querySelectorAll('[data-url], [data-href], [data-link], [data-target], [data-action]').forEach(element => {
+                        ['data-url', 'data-href', 'data-link', 'data-target', 'data-action'].forEach(attrName => {
+                            const value = element.getAttribute(attrName);
+                            if (value && value.trim() !== '') {
+                                urls.add(value);
+                            }
+                        });
+                    });
+
+                    // 7. JavaScript 코드 내부의 URL 패턴 추출 (script 태그 내용)
+                    document.querySelectorAll('script').forEach(script => {
+                        const content = script.textContent || '';
+
+                        // HTTP/HTTPS URL 패턴 매칭
+                        const urlPattern = /https?:\\/\\/[^\\s"'<>()]+/g;
+                        const matches = content.match(urlPattern);
+                        if (matches) {
+                            matches.forEach(url => urls.add(url));
+                        }
+
+                        // 상대 경로 패턴 매칭 (따옴표 안의 경로)
+                        const relativePattern = /['"](\\/[^'"\\s<>()]*\\\\.acl[^'"]*)['"]/g;
+                        let match;
+                        while ((match = relativePattern.exec(content)) !== null) {
+                            urls.add(match[1]);
                         }
                     });
 
