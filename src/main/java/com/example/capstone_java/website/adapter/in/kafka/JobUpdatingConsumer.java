@@ -178,10 +178,12 @@ public class JobUpdatingConsumer {
                     event.websiteId().getId(), newUrls.size(), event.urlCount());
 
             // 크롤링 완료 체크: 새로운 URL이 없거나 maxTotalUrls 도달 시
-            if (newUrls.isEmpty() || currentTotal >= website.getCrawlConfig().maxTotalUrls()) {
+            // 주의: 저장 후 다시 조회하여 정확한 개수 확인
+            long updatedTotal = saveCrawledUrlPort.countByWebsiteId(event.websiteId());
+            if (newUrls.isEmpty() || updatedTotal >= website.getCrawlConfig().maxTotalUrls()) {
                 checkAndMarkCrawlingComplete(event.websiteId());
                 log.info("크롤링 완료 조건 만족 - WebsiteId: {}, 현재 URL 수: {}, 최대: {}",
-                        event.websiteId().getId(), currentTotal, website.getCrawlConfig().maxTotalUrls());
+                        event.websiteId().getId(), updatedTotal, website.getCrawlConfig().maxTotalUrls());
             }
 
             // 모든 처리 완료 후 마지막에 한 번만 acknowledge (메시지 처리 완료를 Kafka에 알림)
