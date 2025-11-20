@@ -150,16 +150,7 @@ public class AnalysisProgressService {
 
             log.info("Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
 
-            // 4. 완료 진행 상황 전송
-            SseProgressDto completedProgress = SseProgressDto.builder()
-                    .stage("COMPLETED")
-                    .percentage(100)
-                    .message("분석 완료!")
-                    .build();
-
-            sseEmitters.send(clientId, completedProgress, "progress");
-
-            // 5. 최종 보고서 전송
+            // 4. 최종 보고서 전송 (complete 이벤트로만 전송, progress는 보내지 않음!)
             sseEmitters.send(clientId, finalReport, "complete");
 
             log.info("최종 보고서 전송 완료: clientId={}, urls={}, score={}",
