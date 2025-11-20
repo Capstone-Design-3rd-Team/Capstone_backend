@@ -2,10 +2,7 @@ package com.example.capstone_java.website.application.service;
 
 import com.example.capstone_java.website.adapter.in.dto.FinalReportDto;
 import com.example.capstone_java.website.adapter.in.dto.SseProgressDto;
-import com.example.capstone_java.website.application.port.out.GetAccessibilityReportPort;
-import com.example.capstone_java.website.application.port.out.GetCrawledUrlPort;
-import com.example.capstone_java.website.application.port.out.GetWebsitePort;
-import com.example.capstone_java.website.application.port.out.SaveWebsitePort;
+import com.example.capstone_java.website.application.port.out.*;
 import com.example.capstone_java.website.domain.entity.AccessibilityReport;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.event.AnalysisCompletedEvent;
@@ -38,6 +35,7 @@ public class AnalysisProgressService {
     private final GetCrawledUrlPort getCrawledUrlPort;
     private final GetAccessibilityReportPort getAccessibilityReportPort;
     private final SaveWebsitePort saveWebsitePort;
+    private final SaveFinalReportPort saveFinalReportPort;
     private final ReportGenerationService reportGenerationService;
     private final SseEmitters sseEmitters;
 
@@ -152,37 +150,55 @@ public class AnalysisProgressService {
         // 모든 분석 완료 체크
         //  트랜잭션 커밋 후라서 totalAnalyzed에 방금 저장한 report가 포함됨!
         //  FAILED URL은 제외하고 DISCOVERED + CRAWLED만 카운트하므로 정확한 100% 체크
+        log.info("🔍 완료 체크: totalAnalyzed={}, totalAnalyzable={}, 조건={}",
+                totalAnalyzed, totalAnalyzable, totalAnalyzed >= totalAnalyzable);
+
         if (totalAnalyzed >= totalAnalyzable) {
-            log.info(" 모든 분석 완료! - clientId={}, total={}", clientId, totalAnalyzable);
+            log.info("🎉 모든 분석 완료! - clientId={}, total={}", clientId, totalAnalyzable);
             sendFinalReport(clientId, websiteId, website);
+        } else {
+            log.warn("⚠️ 아직 완료 안 됨: totalAnalyzed={} < totalAnalyzable={}", totalAnalyzed, totalAnalyzable);
         }
     }
 
     /**
      * 최종 보고서 생성 및 전송 후 SSE 연결 종료
      */
+    /**
+     * 완료 신호 DTO (가벼운 신호만 전송)
+     */
+    private record CompletionSignal(String websiteId, String status) {}
+
     private void sendFinalReport(String clientId, WebsiteId websiteId, Website website) {
         try {
+            log.info("📊 최종 보고서 생성 시작 - clientId={}, websiteId={}", clientId, websiteId.getId());
+
             // 1. 모든 분석 결과 조회
             List<AccessibilityReport> reports = getAccessibilityReportPort.findAllByWebsiteId(websiteId);
+            log.info("📄 분석 결과 조회 완료: {} 개", reports.size());
 
             // 2. 최종 보고서 생성
             FinalReportDto finalReport = reportGenerationService.generateFinalReport(
                     website.getMainUrl(),
                     clientId,
                     reports);
+            log.info("✅ 최종 보고서 생성 완료: averageScore={}", finalReport.getAverageScore());
 
-            // 3. Website 상태를 COMPLETE로 변경 및 저장
+            // 3. 최종 보고서를 DB에 저장 (핵심 변경!)
+            saveFinalReportPort.save(websiteId, finalReport);
+            log.info("💾 최종 보고서 DB 저장 완료: websiteId={}", websiteId.getId());
+
+            // 4. Website 상태를 COMPLETE로 변경 및 저장
             Website completedWebsite = website.markCompleted();
             saveWebsitePort.save(completedWebsite);
+            log.info("💾 Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
 
-            log.info("Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
+            // 5. 가벼운 완료 신호만 SSE로 전송 (큰 JSON 대신!)
+            CompletionSignal signal = new CompletionSignal(websiteId.getId().toString(), "COMPLETED");
+            log.info("📤 complete 신호 전송 시도 - clientId={}", clientId);
+            sseEmitters.send(clientId, signal, "complete");
 
-            // 4. 최종 보고서 전송 (complete 이벤트로만 전송, progress는 보내지 않음!)
-            sseEmitters.send(clientId, finalReport, "complete");
-
-            log.info("최종 보고서 전송 완료: clientId={}, urls={}, score={}",
-                    clientId, reports.size(), finalReport.getAverageScore());
+            log.info("🎊 완료 신호 전송 완료: clientId={}, websiteId={}", clientId, websiteId.getId());
 
             // 6. SSE 연결 종료
             sseEmitters.complete(clientId);

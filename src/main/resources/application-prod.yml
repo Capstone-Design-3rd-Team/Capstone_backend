@@ -74,7 +74,9 @@ playwright:
 
 logging:
   level:
-    com.example.capstone_java: WARN
+    com.example.capstone_java: INFO  # WARN -> INFO (우리 애플리케이션 로그 전체 보기)
+    com.example.capstone_java.website.application.service: DEBUG  # AnalysisProgressService 상세 로그
+    com.example.capstone_java.website.global.sse: DEBUG  # SSE 전송 로그 상세히
     org.springframework.kafka: ERROR  # Kafka 경고 억제 (WARN -> ERROR)
     org.apache.kafka: ERROR  # Kafka Client 로그 최소화
     org.hibernate: WARN
