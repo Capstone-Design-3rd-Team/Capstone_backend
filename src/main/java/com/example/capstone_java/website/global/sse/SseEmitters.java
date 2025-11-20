@@ -50,8 +50,11 @@ public class SseEmitters {
         try {
             emitter.send(SseEmitter.event().name(eventName).data(data));
             log.info("✅ SSE 전송 성공: clientId={}, event={}", clientId, eventName);
-        } catch (IOException e) {
-            log.error("❌ SSE 전송 실패 (IOException): clientId={}, error={}", clientId, e.getMessage(), e);
+        } catch (Exception e) {
+            // IOException (Broken pipe) 등 모든 예외를 조용히 처리
+            // 클라이언트가 이미 연결을 끊은 경우이므로 에러가 아님
+            log.warn("⚠️ SSE 전송 실패 (클라이언트 연결 끊김): clientId={}, event={}, error={}",
+                    clientId, eventName, e.getClass().getSimpleName());
             remove(clientId);
         }
     }

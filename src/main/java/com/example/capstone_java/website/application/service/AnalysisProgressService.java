@@ -11,8 +11,6 @@ import com.example.capstone_java.website.global.sse.SseEmitters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Propagation;
-import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
@@ -36,9 +34,8 @@ public class AnalysisProgressService {
     private final GetWebsitePort getWebsitePort;
     private final GetCrawledUrlPort getCrawledUrlPort;
     private final GetAccessibilityReportPort getAccessibilityReportPort;
-    private final SaveWebsitePort saveWebsitePort;
-    private final SaveFinalReportPort saveFinalReportPort;
     private final ReportGenerationService reportGenerationService;
+    private final FinalReportSaver finalReportSaver;  // 🔥 별도 클래스로 분리
     private final SseEmitters sseEmitters;
 
     // 마지막 전송 퍼센트 저장 (clientId -> 마지막 전송 퍼센트)
@@ -132,8 +129,8 @@ public class AnalysisProgressService {
         int currentPercentage = (int) ((totalAnalyzed / (double) totalAnalyzable) * 100);
         int lastPercentage = lastSentPercentage.getOrDefault(clientId, 0);
 
-        // 10% 변화가 있을 때만 전송
-        if (currentPercentage - lastPercentage >= 10) {
+        // 🔥 핵심 변경: 100%일 때는 progress를 보내지 않음! (complete만 보냄)
+        if (currentPercentage < 100 && currentPercentage - lastPercentage >= 10) {
             SseProgressDto progress = SseProgressDto.builder()
                     .stage("ANALYZING")
                     .crawledCount((int) totalAnalyzable)
@@ -157,6 +154,8 @@ public class AnalysisProgressService {
 
         if (totalAnalyzed >= totalAnalyzable) {
             log.info("🎉 모든 분석 완료! - clientId={}, total={}", clientId, totalAnalyzable);
+            log.info("⏰ [타임스탬프] 분석 완료 시점: {}", System.currentTimeMillis());
+            // 100% progress는 보내지 않고, 바로 DB 저장 후 complete만 보냄
             sendFinalReport(clientId, websiteId, website);
         } else {
             log.warn("⚠️ 아직 완료 안 됨: totalAnalyzed={} < totalAnalyzable={}", totalAnalyzed, totalAnalyzable);
@@ -186,13 +185,20 @@ public class AnalysisProgressService {
                     reports);
             log.info("✅ 최종 보고서 생성 완료: averageScore={}", finalReport.getAverageScore());
 
-            // 3. 🔥 핵심: DB 저장을 별도 트랜잭션으로 즉시 커밋 (SSE 전송 전에 완료)
-            saveReportAndWebsiteInNewTransaction(websiteId, finalReport, website);
+            // 3. 🔥 핵심: 외부 클래스를 통한 DB 저장 (Self-Invocation 회피)
+            //    → Spring 프록시가 정상 작동
+            //    → REQUIRES_NEW 트랜잭션이 즉시 커밋됨
+            log.info("⏰ [타임스탬프] DB 저장 호출 직전: {}", System.currentTimeMillis());
+            finalReportSaver.saveWithNewTransaction(websiteId, finalReport, website);
+            log.info("⏰ [타임스탬프] DB 저장 호출 완료 (커밋됨): {}", System.currentTimeMillis());
 
             // 4. 가벼운 완료 신호만 SSE로 전송 (DB 커밋 완료 후!)
+            //    → 이미 DB에 저장되어 있으므로 프론트가 즉시 조회 가능
             CompletionSignal signal = new CompletionSignal(websiteId.getId().toString(), "COMPLETED");
-            log.info("📤 complete 신호 전송 시도 - clientId={}", clientId);
+            log.info("⏰ [타임스탬프] SSE 전송 직전: {}", System.currentTimeMillis());
+            log.info("📤 complete 신호 전송 시도 - clientId={}, websiteId={}", clientId, websiteId.getId());
             sseEmitters.send(clientId, signal, "complete");
+            log.info("⏰ [타임스탬프] SSE 전송 완료: {}", System.currentTimeMillis());
 
             log.info("🎊 완료 신호 전송 완료: clientId={}, websiteId={}", clientId, websiteId.getId());
 
@@ -216,24 +222,4 @@ public class AnalysisProgressService {
         }
     }
 
-    /**
-     * 최종 보고서와 Website 상태를 별도 트랜잭션으로 저장
-     *
-     * REQUIRES_NEW: 부모 트랜잭션과 독립적으로 즉시 커밋
-     * → SSE 전송 전에 DB 커밋 완료 보장
-     */
-    @Transactional(propagation = Propagation.REQUIRES_NEW)
-    public void saveReportAndWebsiteInNewTransaction(WebsiteId websiteId, FinalReportDto finalReport, Website website) {
-        // 최종 보고서 DB 저장
-        saveFinalReportPort.save(websiteId, finalReport);
-        log.info("💾 최종 보고서 DB 저장 완료: websiteId={}", websiteId.getId());
-
-        // Website 상태를 COMPLETE로 변경 및 저장
-        Website completedWebsite = website.markCompleted();
-        saveWebsitePort.save(completedWebsite);
-        log.info("💾 Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
-
-        // 메서드 종료 → 즉시 커밋! (REQUIRES_NEW)
-        log.info("✅ 트랜잭션 커밋 완료 - 이제 SSE 전송 가능");
-    }
 }
