@@ -43,15 +43,15 @@ public class SseEmitters {
     public void send(String clientId, Object data, String eventName) {
         SseEmitter emitter = emitters.get(clientId);
         if (emitter == null) {
-            log.warn("SSE 연결 없음: {}", clientId);
+            log.warn("❌ SSE 연결 없음: clientId={}, 현재 등록된 연결: {}", clientId, emitters.keySet());
             return;
         }
 
         try {
             emitter.send(SseEmitter.event().name(eventName).data(data));
-            log.debug("SSE 전송: clientId={}, event={}", clientId, eventName);
+            log.info("✅ SSE 전송 성공: clientId={}, event={}", clientId, eventName);
         } catch (IOException e) {
-            log.error("SSE 전송 실패: {}", clientId);
+            log.error("❌ SSE 전송 실패 (IOException): clientId={}, error={}", clientId, e.getMessage(), e);
             remove(clientId);
         }
     }
