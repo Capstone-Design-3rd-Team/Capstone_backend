@@ -17,6 +17,7 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 
 /**
@@ -66,7 +67,15 @@ public class SseController {
     @GetMapping(value = "/connect/{clientId}", produces = MediaType.TEXT_EVENT_STREAM_VALUE)
     public SseEmitter connect(
             @Parameter(description = "웹사이트 등록 시 발급받은 클라이언트 ID", example = "client_12345")
-            @PathVariable String clientId) throws IOException {
+            @PathVariable String clientId,
+            HttpServletResponse response) throws IOException {
+
+        // SSE 필수 헤더 명시적 설정
+        response.setHeader("Content-Type", "text/event-stream;charset=UTF-8");
+        response.setHeader("Cache-Control", "no-cache");
+        response.setHeader("Connection", "keep-alive");
+        response.setHeader("X-Accel-Buffering", "no");  // Nginx 프록시용
+
         SseEmitter emitter = sseEmitters.add(clientId);
 
         // 연결 직후 더미 데이터 전송 (연결 즉시 성립)

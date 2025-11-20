@@ -8,11 +8,15 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class CorsConfig implements WebMvcConfigurer {
     @Override
     public void addCorsMappings(CorsRegistry registry) {
-        registry.addMapping("/**")  // 1. 모든 경로에 대해
-                .allowedOriginPatterns("*")     // 2. 모든 Origin 패턴 허용 (http, https, localhost 등)
-                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS") // 3. 허용할 HTTP 메서드
-                .allowedHeaders("*")            // 4. 허용할 모든 헤더
-                .allowCredentials(true)         // 5. 자격 증명 (쿠키 등) 허용
-                .maxAge(3600);                  // 6. Preflight 요청 캐시 시간
+        registry.addMapping("/**")
+                .allowedOrigins(
+                        "https://tech-for-everyone-virid.vercel.app", // 1. 실제 배포된 프론트 도메인 (필수!)
+                        "http://localhost:3000"                         // 2. 로컬 개발 환경 (테스트용)
+
+                )
+                .allowedMethods("GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS")
+                .allowedHeaders("*")
+                .allowCredentials(true) // SSE나 토큰 사용 시 필수
+                .maxAge(3600);
     }
 }
