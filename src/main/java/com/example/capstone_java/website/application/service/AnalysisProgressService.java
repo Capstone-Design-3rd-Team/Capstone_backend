@@ -8,11 +8,14 @@ import com.example.capstone_java.website.application.port.out.GetWebsitePort;
 import com.example.capstone_java.website.application.port.out.SaveWebsitePort;
 import com.example.capstone_java.website.domain.entity.AccessibilityReport;
 import com.example.capstone_java.website.domain.entity.Website;
+import com.example.capstone_java.website.domain.event.AnalysisCompletedEvent;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import com.example.capstone_java.website.global.sse.SseEmitters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 
 import java.util.List;
 import java.util.Map;
@@ -89,9 +92,29 @@ public class AnalysisProgressService {
     }
 
     /**
-     * AI 분석 진행 상황 SSE 전송 (분석 결과 받을 때마다 호출)
+     * AI 분석 완료 이벤트 리스너 (트랜잭션 커밋 후 실행)
+     *
+     * 실행 시점: AccessibilityReport가 DB에 커밋된 직후
+     * 장점:
+     * 1. count 조회 시 방금 저장한 report가 포함됨 (정확한 진행률 계산)
+     * 2. 마지막 URL 분석 완료 시 totalAnalyzed >= totalCrawled 조건이 정확히 작동
+     * 3. 100% 완료 체크가 빠지지 않음
      */
-    public void notifyAnalysisProgress(WebsiteId websiteId) {
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onAnalysisCompleted(AnalysisCompletedEvent event) {
+        log.debug("트랜잭션 커밋 후 AI 분석 진행 상황 체크 - websiteId={}", event.websiteId().getId());
+        notifyAnalysisProgress(event.websiteId());
+    }
+
+    /**
+     * AI 분석 진행 상황 SSE 전송
+     *
+     * ⚠️ 주의: 이 메서드는 트랜잭션 커밋 후에 호출되어야 합니다.
+     * - AnalysisResultConsumer에서 save() 후 즉시 호출하면 안 됨!
+     * - @TransactionalEventListener(phase = AFTER_COMMIT)로 호출되어야 함
+     * - 그래야 DB count 조회 시 방금 저장한 report가 포함됨
+     */
+    private void notifyAnalysisProgress(WebsiteId websiteId) {
         Website website = getWebsitePort.findById(websiteId)
                 .orElseThrow(() -> new IllegalArgumentException("Website not found: " + websiteId.getId()));
 
@@ -124,8 +147,9 @@ public class AnalysisProgressService {
         }
 
         // 모든 분석 완료 체크
+        // ✅ 이제 트랜잭션 커밋 후라서 totalAnalyzed에 방금 저장한 report가 포함됨!
         if (totalAnalyzed >= totalCrawled) {
-            log.info("모든 분석 완료! - clientId={}, total={}", clientId, totalCrawled);
+            log.info("🎉 모든 분석 완료! - clientId={}, total={}", clientId, totalCrawled);
             sendFinalReport(clientId, websiteId, website);
         }
     }
