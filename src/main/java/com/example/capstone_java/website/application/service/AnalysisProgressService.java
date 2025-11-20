@@ -11,6 +11,8 @@ import com.example.capstone_java.website.global.sse.SseEmitters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.event.TransactionalEventListener;
 import org.springframework.transaction.event.TransactionPhase;
 
@@ -184,23 +186,17 @@ public class AnalysisProgressService {
                     reports);
             log.info("✅ 최종 보고서 생성 완료: averageScore={}", finalReport.getAverageScore());
 
-            // 3. 최종 보고서를 DB에 저장 (핵심 변경!)
-            saveFinalReportPort.save(websiteId, finalReport);
-            log.info("💾 최종 보고서 DB 저장 완료: websiteId={}", websiteId.getId());
+            // 3. 🔥 핵심: DB 저장을 별도 트랜잭션으로 즉시 커밋 (SSE 전송 전에 완료)
+            saveReportAndWebsiteInNewTransaction(websiteId, finalReport, website);
 
-            // 4. Website 상태를 COMPLETE로 변경 및 저장
-            Website completedWebsite = website.markCompleted();
-            saveWebsitePort.save(completedWebsite);
-            log.info("💾 Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
-
-            // 5. 가벼운 완료 신호만 SSE로 전송 (큰 JSON 대신!)
+            // 4. 가벼운 완료 신호만 SSE로 전송 (DB 커밋 완료 후!)
             CompletionSignal signal = new CompletionSignal(websiteId.getId().toString(), "COMPLETED");
             log.info("📤 complete 신호 전송 시도 - clientId={}", clientId);
             sseEmitters.send(clientId, signal, "complete");
 
             log.info("🎊 완료 신호 전송 완료: clientId={}, websiteId={}", clientId, websiteId.getId());
 
-            // 6. SSE 연결 종료
+            // 5. SSE 연결 종료
             sseEmitters.complete(clientId);
             lastSentPercentage.remove(clientId);
 
@@ -218,5 +214,26 @@ public class AnalysisProgressService {
             sseEmitters.send(clientId, errorProgress, "error");
             sseEmitters.complete(clientId);
         }
+    }
+
+    /**
+     * 최종 보고서와 Website 상태를 별도 트랜잭션으로 저장
+     *
+     * REQUIRES_NEW: 부모 트랜잭션과 독립적으로 즉시 커밋
+     * → SSE 전송 전에 DB 커밋 완료 보장
+     */
+    @Transactional(propagation = Propagation.REQUIRES_NEW)
+    public void saveReportAndWebsiteInNewTransaction(WebsiteId websiteId, FinalReportDto finalReport, Website website) {
+        // 최종 보고서 DB 저장
+        saveFinalReportPort.save(websiteId, finalReport);
+        log.info("💾 최종 보고서 DB 저장 완료: websiteId={}", websiteId.getId());
+
+        // Website 상태를 COMPLETE로 변경 및 저장
+        Website completedWebsite = website.markCompleted();
+        saveWebsitePort.save(completedWebsite);
+        log.info("💾 Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
+
+        // 메서드 종료 → 즉시 커밋! (REQUIRES_NEW)
+        log.info("✅ 트랜잭션 커밋 완료 - 이제 SSE 전송 가능");
     }
 }
