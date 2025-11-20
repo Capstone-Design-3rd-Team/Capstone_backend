@@ -89,10 +89,16 @@ public class AnalysisResultConsumer {
             UUID websiteUuid = UUID.fromString(websiteIdStr);
             WebsiteId websiteId = WebsiteId.of(websiteUuid);
 
-            // Website 존재 여부 확인
-            Website website = getWebsitePort.findById(websiteId)
-                    .orElseThrow(() -> new IllegalArgumentException(
-                            "존재하지 않는 WebsiteId: " + websiteIdStr));
+            // Website 존재 여부 확인 (삭제된 데이터면 무시)
+            var websiteOptional = getWebsitePort.findById(websiteId);
+            if (websiteOptional.isEmpty()) {
+                log.warn("이미 삭제된 웹사이트에 대한 AI 분석 결과입니다. 무시합니다. - WebsiteId: {}, URL: {}",
+                        websiteIdStr, url);
+                acknowledgment.acknowledge(); // 메시지 처리 완료
+                return;
+            }
+
+            Website website = websiteOptional.get();
 
             // 도메인 객체 생성 (원본 Map과 DTO 모두 전달)
             AccessibilityReport report = AccessibilityReport.create(

@@ -74,9 +74,16 @@ public class JobUpdatingConsumer {
             log.info("발견된 URL 배치 처리 시작 - Topic: {}, WebsiteId: {}, URL 개수: {}, Depth: {}, Partition: {}, Offset: {}",
                     topic, event.websiteId().getId(), event.urlCount(), event.depth(), partition, offset);
 
-            // Website 도메인 조회
-            Website website = getWebsitePort.findById(event.websiteId())
-                    .orElseThrow(() -> new IllegalStateException("website 도메인을 찾을 수 없습니다"));
+            // Website 존재 여부 확인 (삭제된 데이터면 무시)
+            var websiteOptional = getWebsitePort.findById(event.websiteId());
+            if (websiteOptional.isEmpty()) {
+                log.warn("이미 삭제된 웹사이트에 대한 URL 발견 이벤트입니다. 무시합니다. - WebsiteId: {}",
+                        event.websiteId().getId());
+                acknowledgment.acknowledge(); // 메시지 처리 완료
+                return;
+            }
+
+            Website website = websiteOptional.get();
 
             // 도메인 로직: 깊이 확인
             // jobupdating에서 다시 이벤트를 받아 확인해야 되기 때문에 크롤링하기 전에 먼저 검사해야한다
