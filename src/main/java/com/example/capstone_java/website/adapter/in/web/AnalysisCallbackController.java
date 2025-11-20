@@ -63,6 +63,7 @@ public class AnalysisCallbackController {
         } catch (Exception e) {
             log.error("AI 콜백 처리 중 오류 발생: {}", e.getMessage(), e);
 
+
             // 오류 발생 시 500 에러 반환 → AI 서버가 재시도하도록 유도
             return ResponseEntity.internalServerError().body(Map.of(
                 "status", "error",
