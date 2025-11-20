@@ -8,11 +8,14 @@ import com.example.capstone_java.website.application.port.out.GetWebsitePort;
 import com.example.capstone_java.website.application.port.out.SaveWebsitePort;
 import com.example.capstone_java.website.domain.entity.AccessibilityReport;
 import com.example.capstone_java.website.domain.entity.Website;
+import com.example.capstone_java.website.domain.event.AnalysisCompletedEvent;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import com.example.capstone_java.website.global.sse.SseEmitters;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.event.TransactionalEventListener;
+import org.springframework.transaction.event.TransactionPhase;
 
 import java.util.List;
 import java.util.Map;
@@ -49,7 +52,8 @@ public class AnalysisProgressService {
                 .orElseThrow(() -> new IllegalArgumentException("Website not found: " + websiteId.getId()));
 
         String clientId = website.getClientId();
-        long totalCrawled = getCrawledUrlPort.countByWebsiteId(websiteId);
+        //  AI 분석 가능한 URL만 카운트 (DISCOVERED + CRAWLED, FAILED 제외)
+        long totalCrawled = getCrawledUrlPort.countAnalyzableUrls(websiteId);
 
         SseProgressDto progress = SseProgressDto.builder()
                 .stage("CRAWLING")
@@ -61,7 +65,7 @@ public class AnalysisProgressService {
                 .build();
 
         sseEmitters.send(clientId, progress, "progress");
-        log.debug("크롤링 진행 상황 전송: clientId={}, crawledCount={}", clientId, totalCrawled);
+        log.debug("크롤링 진행 상황 전송: clientId={}, crawledCount={} (FAILED 제외)", clientId, totalCrawled);
     }
 
     /**
@@ -72,49 +76,71 @@ public class AnalysisProgressService {
                 .orElseThrow(() -> new IllegalArgumentException("Website not found: " + websiteId.getId()));
 
         String clientId = website.getClientId();
-        long totalCrawled = getCrawledUrlPort.countByWebsiteId(websiteId);
+        //  AI 분석 가능한 URL만 카운트 (DISCOVERED + CRAWLED, FAILED 제외)
+        long totalAnalyzable = getCrawledUrlPort.countAnalyzableUrls(websiteId);
 
         // ANALYZING 단계 시작 (0% 전송)
         SseProgressDto progress = SseProgressDto.builder()
                 .stage("ANALYZING")
-                .crawledCount((int) totalCrawled)
+                .crawledCount((int) totalAnalyzable)
                 .analyzedCount(0)
-                .totalCount((int) totalCrawled)
+                .totalCount((int) totalAnalyzable)
                 .percentage(0)
-                .message("AI 분석 중... (0/" + totalCrawled + ")")
+                .message("AI 분석 중... (0/" + totalAnalyzable + ")")
                 .build();
 
         sseEmitters.send(clientId, progress, "progress");
-        log.info("크롤링 완료 알림 전송: clientId={}, totalCrawled={}", clientId, totalCrawled);
+        log.info("크롤링 완료 알림 전송: clientId={}, totalAnalyzable={} (FAILED 제외)", clientId, totalAnalyzable);
     }
 
     /**
-     * AI 분석 진행 상황 SSE 전송 (분석 결과 받을 때마다 호출)
+     * AI 분석 완료 이벤트 리스너 (트랜잭션 커밋 후 실행)
+     *
+     * 실행 시점: AccessibilityReport가 DB에 커밋된 직후
+     * 장점:
+     * 1. count 조회 시 방금 저장한 report가 포함됨 (정확한 진행률 계산)
+     * 2. 마지막 URL 분석 완료 시 totalAnalyzed >= totalCrawled 조건이 정확히 작동
+     * 3. 100% 완료 체크가 빠지지 않음
      */
-    public void notifyAnalysisProgress(WebsiteId websiteId) {
+    @TransactionalEventListener(phase = TransactionPhase.AFTER_COMMIT)
+    public void onAnalysisCompleted(AnalysisCompletedEvent event) {
+        log.debug("트랜잭션 커밋 후 AI 분석 진행 상황 체크 - websiteId={}", event.websiteId().getId());
+        notifyAnalysisProgress(event.websiteId());
+    }
+
+    /**
+     * AI 분석 진행 상황 SSE 전송
+     *
+     *  주의: 이 메서드는 트랜잭션 커밋 후에 호출되어야 합니다.
+     * - AnalysisResultConsumer에서 save() 후 즉시 호출하면 안 됨!
+     * - @TransactionalEventListener(phase = AFTER_COMMIT)로 호출되어야 함
+     * - 그래야 DB count 조회 시 방금 저장한 report가 포함됨
+     */
+    private void notifyAnalysisProgress(WebsiteId websiteId) {
         Website website = getWebsitePort.findById(websiteId)
                 .orElseThrow(() -> new IllegalArgumentException("Website not found: " + websiteId.getId()));
 
         String clientId = website.getClientId();
-        long totalCrawled = getCrawledUrlPort.countByWebsiteId(websiteId);
+        //  AI 분석 가능한 URL만 카운트 (DISCOVERED + CRAWLED, FAILED 제외)
+        long totalAnalyzable = getCrawledUrlPort.countAnalyzableUrls(websiteId);
         long totalAnalyzed = getAccessibilityReportPort.countByWebsiteId(websiteId);
 
-        log.debug("AI 분석 진행 상황: clientId={}, 분석={}/{}", clientId, totalAnalyzed, totalCrawled);
+        log.debug("AI 분석 진행 상황: clientId={}, 분석={}/{} (FAILED 제외)", clientId, totalAnalyzed, totalAnalyzable);
 
-        if (totalCrawled == 0) return;
+        if (totalAnalyzable == 0) return;
 
-        int currentPercentage = (int) ((totalAnalyzed / (double) totalCrawled) * 100);
+        int currentPercentage = (int) ((totalAnalyzed / (double) totalAnalyzable) * 100);
         int lastPercentage = lastSentPercentage.getOrDefault(clientId, 0);
 
         // 10% 변화가 있을 때만 전송
         if (currentPercentage - lastPercentage >= 10) {
             SseProgressDto progress = SseProgressDto.builder()
                     .stage("ANALYZING")
-                    .crawledCount((int) totalCrawled)
+                    .crawledCount((int) totalAnalyzable)
                     .analyzedCount((int) totalAnalyzed)
-                    .totalCount((int) totalCrawled)
+                    .totalCount((int) totalAnalyzable)
                     .percentage(currentPercentage)
-                    .message("AI 분석 중... (" + totalAnalyzed + "/" + totalCrawled + ")")
+                    .message("AI 분석 중... (" + totalAnalyzed + "/" + totalAnalyzable + ")")
                     .build();
 
             sseEmitters.send(clientId, progress, "progress");
@@ -124,8 +150,10 @@ public class AnalysisProgressService {
         }
 
         // 모든 분석 완료 체크
-        if (totalAnalyzed >= totalCrawled) {
-            log.info("모든 분석 완료! - clientId={}, total={}", clientId, totalCrawled);
+        //  트랜잭션 커밋 후라서 totalAnalyzed에 방금 저장한 report가 포함됨!
+        //  FAILED URL은 제외하고 DISCOVERED + CRAWLED만 카운트하므로 정확한 100% 체크
+        if (totalAnalyzed >= totalAnalyzable) {
+            log.info(" 모든 분석 완료! - clientId={}, total={}", clientId, totalAnalyzable);
             sendFinalReport(clientId, websiteId, website);
         }
     }

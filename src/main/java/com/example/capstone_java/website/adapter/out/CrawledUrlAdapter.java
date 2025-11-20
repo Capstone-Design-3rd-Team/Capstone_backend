@@ -80,7 +80,16 @@ public class CrawledUrlAdapter implements SaveCrawledUrlPort, GetCrawledUrlPort 
         return crawledUrlRepository.countByWebsiteId(websiteId.getId());
     }
 
-    // [추가] 실패한 URL 개수 카운트 구현
+    @Override
+    public long countAnalyzableUrls(WebsiteId websiteId) {
+        return crawledUrlRepository.countAnalyzableUrlsByWebsiteId(websiteId.getId());
+    }
+
+    @Override
+    public long countCrawledUrls(WebsiteId websiteId) {
+        return crawledUrlRepository.countByWebsiteIdAndStatus(websiteId.getId(), CrawlStatus.CRAWLED);
+    }
+
     @Override
     public long countFailedByWebsiteId(WebsiteId websiteId) {
         return crawledUrlRepository.countByWebsiteIdAndStatus(websiteId.getId(), CrawlStatus.FAILED);

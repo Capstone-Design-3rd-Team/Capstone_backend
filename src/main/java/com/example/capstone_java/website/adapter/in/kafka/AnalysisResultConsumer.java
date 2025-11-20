@@ -5,12 +5,14 @@ import com.example.capstone_java.website.application.port.out.GetWebsitePort;
 import com.example.capstone_java.website.application.port.out.SaveAccessibilityReportPort;
 import com.example.capstone_java.website.domain.entity.AccessibilityReport;
 import com.example.capstone_java.website.domain.entity.Website;
+import com.example.capstone_java.website.domain.event.AnalysisCompletedEvent;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import com.example.capstone_java.website.global.common.KafkaGroups;
 import com.example.capstone_java.website.global.common.KafkaTopics;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.support.Acknowledgment;
@@ -45,7 +47,7 @@ public class AnalysisResultConsumer {
     private final SaveAccessibilityReportPort saveAccessibilityReportPort;
     private final GetWebsitePort getWebsitePort;
     private final ObjectMapper objectMapper;
-    private final com.example.capstone_java.website.application.service.AnalysisProgressService analysisProgressService;
+    private final ApplicationEventPublisher eventPublisher;
 
     @RetryableTopic(
         attempts = "3",
@@ -68,16 +70,11 @@ public class AnalysisResultConsumer {
         try {
             log.info("AI 분석 결과 처리 시작 - Topic: {}, Partition: {}, Offset: {}", topic, partition, offset);
 
-            // Map을 DTO로 변환
+            // 1. DTO 변환 및 데이터 추출
             AiAnalysisResponse aiResponse = objectMapper.convertValue(analysisResult, AiAnalysisResponse.class);
-
-            // DTO에서 필수 정보 추출
             String url = aiResponse.getUrl();
             String taskId = aiResponse.getTaskId();
             String websiteIdStr = aiResponse.getWebsiteId();
-
-            log.info("AI 분석 완료 - WebsiteId: {}, URL: {}, TaskId: {}, Score: {}",
-                    websiteIdStr, url, taskId, aiResponse.getAccessibilityScore());
 
             if (websiteIdStr == null || websiteIdStr.isEmpty()) {
                 log.error("AI 응답에 website_id가 없음 - URL: {}, TaskId: {}", url, taskId);
@@ -85,45 +82,38 @@ public class AnalysisResultConsumer {
                 return;
             }
 
-            // WebsiteId 도메인 객체 생성
             UUID websiteUuid = UUID.fromString(websiteIdStr);
             WebsiteId websiteId = WebsiteId.of(websiteUuid);
 
-            // Website 존재 여부 확인 (삭제된 데이터면 무시)
+            // 2. Website 존재 여부 확인
             var websiteOptional = getWebsitePort.findById(websiteId);
             if (websiteOptional.isEmpty()) {
-                log.warn("이미 삭제된 웹사이트에 대한 AI 분석 결과입니다. 무시합니다. - WebsiteId: {}, URL: {}",
-                        websiteIdStr, url);
-                acknowledgment.acknowledge(); // 메시지 처리 완료
+                log.warn("이미 삭제된 웹사이트 결과 무시 - WebsiteId: {}", websiteIdStr);
+                acknowledgment.acknowledge();
                 return;
             }
 
-            Website website = websiteOptional.get();
-
-            // 도메인 객체 생성 (원본 Map과 DTO 모두 전달)
+            // 3. 리포트 생성 및 DB 저장 (아직 커밋 안 됨!)
             AccessibilityReport report = AccessibilityReport.create(
-                websiteId,
-                url,
-                analysisResult,  // 전체 JSON 저장용
-                aiResponse,      // 파싱된 DTO
-                taskId
+                    websiteId, url, analysisResult, aiResponse, taskId
             );
-
-            // DB에 저장
             AccessibilityReport savedReport = saveAccessibilityReportPort.save(report);
 
-            log.info("AI 분석 결과 저장 완료 - Report ID: {}, WebsiteId: {}, URL: {}, Score: {}",
+            log.info("AI 분석 결과 저장 완료 (커밋 대기 중) - Report ID: {}, WebsiteId: {}, URL: {}, Score: {}",
                     savedReport.getId(), websiteId.getId(), savedReport.getUrl(), savedReport.getAccessibilityScore());
 
-            // AI 분석 진행 상황 SSE 전송 (퍼센트 업데이트)
-            analysisProgressService.notifyAnalysisProgress(websiteId);
+            // 4. 🔥 핵심: 이벤트 발행 (트랜잭션 커밋 후 AnalysisProgressService.onAnalysisCompleted()가 실행됨)
+            // - @TransactionalEventListener(phase = AFTER_COMMIT)로 처리되므로
+            // - count 조회 시 방금 저장한 report가 포함됨
+            // - 마지막 URL 완료 시 totalAnalyzed >= totalCrawled 조건이 정확히 작동
+            eventPublisher.publishEvent(AnalysisCompletedEvent.of(websiteId));
 
-            // 저장 성공 후 메시지 처리 완료
+            // 5. 메시지 처리 완료 (메서드 종료 → 트랜잭션 커밋 → 이벤트 리스너 실행)
             acknowledgment.acknowledge();
 
         } catch (Exception e) {
             log.error("AI 분석 결과 처리 실패 (재시도 예정) - Error: {}", e.getMessage(), e);
-            throw e;  // acknowledge 없이 throw → Kafka가 메시지 재시도
+            throw e;
         }
     }
 
