@@ -29,9 +29,19 @@ public class FinalReportAdapter implements SaveFinalReportPort, GetFinalReportPo
 
     @Override
     public void save(WebsiteId websiteId, FinalReportDto finalReport) {
+        log.info("🔍 FinalReport 저장 시작 - websiteId={}", websiteId.getId());
+        log.info("🔍 Input FinalReport: websiteUrl={}, clientId={}, totalUrls={}, avgScore={}",
+                finalReport.getWebsiteUrl(), finalReport.getClientId(),
+                finalReport.getTotalAnalyzedUrls(), finalReport.getAverageScore());
+        log.info("🔍 urlReports 개수: {}", finalReport.getUrlReports() != null ? finalReport.getUrlReports().size() : "null");
+
         // DTO를 Map으로 변환 (JSON 저장용)
         @SuppressWarnings("unchecked")
         Map<String, Object> reportJson = objectMapper.convertValue(finalReport, Map.class);
+
+        log.info("🔍 변환된 Map 키: {}", reportJson.keySet());
+        log.info("🔍 변환된 Map - websiteUrl: {}", reportJson.get("websiteUrl"));
+        log.info("🔍 변환된 Map - averageScore: {}", reportJson.get("averageScore"));
 
         FinalReportEntity entity = FinalReportEntity.create(
                 websiteId.getId(),
@@ -41,7 +51,7 @@ public class FinalReportAdapter implements SaveFinalReportPort, GetFinalReportPo
         );
 
         finalReportRepository.save(entity);
-        log.info("최종 보고서 DB 저장 완료: websiteId={}, score={}, urls={}",
+        log.info("✅ 최종 보고서 DB 저장 완료: websiteId={}, score={}, urls={}",
                 websiteId.getId(), finalReport.getAverageScore(),
                 finalReport.getUrlReports() != null ? finalReport.getUrlReports().size() : 0);
     }

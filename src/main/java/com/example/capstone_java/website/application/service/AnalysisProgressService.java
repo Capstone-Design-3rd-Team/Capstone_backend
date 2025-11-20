@@ -178,6 +178,12 @@ public class AnalysisProgressService {
             List<AccessibilityReport> reports = getAccessibilityReportPort.findAllByWebsiteId(websiteId);
             log.info("📄 분석 결과 조회 완료: {} 개", reports.size());
 
+            if (reports.isEmpty()) {
+                log.error("❌ AccessibilityReport가 비어있음! websiteId={}", websiteId.getId());
+                log.error("❌ DB에서 조회된 report 개수: {}", getAccessibilityReportPort.countByWebsiteId(websiteId));
+                return;  // 빈 보고서 저장하지 않음
+            }
+
             // 2. 최종 보고서 생성
             FinalReportDto finalReport = reportGenerationService.generateFinalReport(
                     website.getMainUrl(),
