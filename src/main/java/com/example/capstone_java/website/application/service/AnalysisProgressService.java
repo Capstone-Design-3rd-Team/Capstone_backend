@@ -56,6 +56,12 @@ public class AnalysisProgressService {
         long totalCrawled = getCrawledUrlPort.countByWebsiteId(websiteId);
         long totalAnalyzed = getAccessibilityReportPort.countByWebsiteId(websiteId);
 
+        // [추가] 크롤링하다가 실패해서 죽어버린 URL 개수 조회
+        long totalFailed = getCrawledUrlPort.countFailedByWebsiteId(websiteId);
+
+        // [수정] 처리된 총 개수 = 성공한 AI 분석 + 실패한 크롤링
+        long totalProcessed = totalAnalyzed + totalFailed;
+
         log.debug("진행 상황: clientId={}, 크롤링={}, 분석={}/{}",
                 clientId, totalCrawled, totalAnalyzed, totalCrawled);
 
@@ -69,9 +75,16 @@ public class AnalysisProgressService {
             // 분석 단계 (퍼센트 있음)
             sendAnalyzingProgress(clientId, (int) totalAnalyzed, (int) totalCrawled);
 
-            // 3. 모든 분석 완료 체크
-            if (totalAnalyzed >= totalCrawled && totalCrawled > 0) {
-                log.info("모든 분석 완료! - clientId={}, total={}", clientId, totalCrawled);
+            /// [핵심 수정] 넉넉한 오차 범위 적용 (5개)
+            // URL이 100개면 95개만 처리돼도 완료!
+            // 단, totalProcessed > 0 체크를 통해 "시작하자마자 완료되는 것"은 방지
+            long margin = 5;
+            long threshold = Math.max(1, totalCrawled - margin); // 최소 1개는 처리되어야 함
+
+            if (totalProcessed >= threshold) {
+                log.info("분석 완료 (오차 5개 허용)! - 전체: {}, 처리됨: {}, 남은거: {}",
+                        totalCrawled, totalProcessed, (totalCrawled - totalProcessed));
+
                 sendFinalReport(clientId, websiteId, website);
             }
         }
@@ -96,21 +109,21 @@ public class AnalysisProgressService {
     /**
      * 분석 단계 진행 상황 전송 (10% 단위 배치 전송)
      */
-    private void sendAnalyzingProgress(String clientId, int analyzedCount, int totalCount) {
+    private void sendAnalyzingProgress(String clientId, int processedCount, int totalCount) {
         if (totalCount == 0) return;
 
-        int currentPercentage = (int) ((analyzedCount / (double) totalCount) * 100);
+        int currentPercentage = (int) ((processedCount / (double) totalCount) * 100);
         int lastPercentage = lastSentPercentage.getOrDefault(clientId, 0);
 
-        // 10% 변화가 있을 때만 전송
-        if (currentPercentage - lastPercentage >= 10) {
+        // 10% 변화가 있거나 완료(100%)되었을 때 전송
+        if (currentPercentage - lastPercentage >= 10 || currentPercentage == 100) {
             SseProgressDto progress = SseProgressDto.builder()
                     .stage("ANALYZING")
                     .crawledCount(totalCount)
-                    .analyzedCount(analyzedCount)
+                    .analyzedCount(processedCount)
                     .totalCount(totalCount)
                     .percentage(currentPercentage)
-                    .message("AI 분석 중... (" + analyzedCount + "/" + totalCount + ")")
+                    .message("AI 분석 중... (" + processedCount + "/" + totalCount + ")")
                     .build();
 
             sseEmitters.send(clientId, progress, "progress");
@@ -125,51 +138,41 @@ public class AnalysisProgressService {
      */
     private void sendFinalReport(String clientId, WebsiteId websiteId, Website website) {
         try {
-            // 1. 모든 분석 결과 조회
+            // 1. 성공한 분석 결과만 조회해서 리포트 생성
             List<AccessibilityReport> reports = getAccessibilityReportPort.findAllByWebsiteId(websiteId);
 
-            // 2. 최종 보고서 생성
             FinalReportDto finalReport = reportGenerationService.generateFinalReport(
                     website.getMainUrl(),
                     clientId,
                     reports);
 
-            // 3. Website 상태를 COMPLETE로 변경 및 저장 (SSE 전송 전에 먼저 저장!)
+            // 2. Website 상태 저장
             Website completedWebsite = website.markCompleted();
             saveWebsitePort.save(completedWebsite);
 
-            log.info("Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
-
-            // 4. 완료 진행 상황 전송 (DB 저장 후!)
+            // 3. 완료 신호 전송
             SseProgressDto completedProgress = SseProgressDto.builder()
                     .stage("COMPLETED")
                     .percentage(100)
                     .message("분석 완료!")
                     .build();
-
             sseEmitters.send(clientId, completedProgress, "progress");
 
-            // 5. 최종 보고서 전송
+            // 4. 최종 리포트 전송
             sseEmitters.send(clientId, finalReport, "complete");
 
-            log.info("최종 보고서 전송 완료: clientId={}, urls={}, score={}",
-                    clientId, reports.size(), finalReport.getAverageScore());
+            log.info("최종 보고서 전송 완료: clientId={}", clientId);
 
-            // 6. SSE 연결 종료
+            // 5. 연결 종료
             sseEmitters.complete(clientId);
             lastSentPercentage.remove(clientId);
 
-            log.info("SSE 연결 종료: clientId={}", clientId);
-
         } catch (Exception e) {
             log.error("최종 보고서 생성 실패: clientId={}", clientId, e);
-
-            // 에러 메시지 전송
             SseProgressDto errorProgress = SseProgressDto.builder()
                     .stage("ERROR")
                     .message("보고서 생성 중 오류가 발생했습니다.")
                     .build();
-
             sseEmitters.send(clientId, errorProgress, "error");
             sseEmitters.complete(clientId);
         }
