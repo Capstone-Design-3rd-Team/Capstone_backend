@@ -3,6 +3,7 @@ package com.example.capstone_java.website.adapter.in.kafka;
 import com.example.capstone_java.website.application.port.out.CrawlCachePort;
 import com.example.capstone_java.website.application.port.out.GetWebsitePort;
 import com.example.capstone_java.website.application.port.out.SaveCrawledUrlPort;
+import com.example.capstone_java.website.application.port.out.SaveWebsitePort;
 import com.example.capstone_java.website.domain.entity.CrawledUrl;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.event.DiscoveredUrlsEvent;
@@ -47,6 +48,7 @@ public class JobUpdatingConsumer {
     private final SaveCrawledUrlPort saveCrawledUrlPort;
     private final CrawlCachePort crawlCachePort;
     private final GetWebsitePort getWebsitePort;
+    private final SaveWebsitePort saveWebsitePort;
     private final ApplicationEventPublisher eventPublisher;
 
     @org.springframework.beans.factory.annotation.Value("${app.callback.base-url:http://localhost:8080}")
@@ -121,6 +123,21 @@ public class JobUpdatingConsumer {
                 return;
             }
 
+            // maxTotalUrls 제한 적용: 현재 개수 + 새로 추가할 개수가 제한을 초과하면 잘라냄
+            long currentTotal = saveCrawledUrlPort.countByWebsiteId(event.websiteId());
+            int maxAllowed = (int) (website.getCrawlConfig().maxTotalUrls() - currentTotal);
+
+            if (maxAllowed <= 0) {
+                log.info("URL 수 제한 도달. 추가 중단 - WebsiteId: {}, 현재: {}, 최대: {}",
+                        event.websiteId().getId(), currentTotal, website.getCrawlConfig().maxTotalUrls());
+                return;
+            }
+
+            if (newUrls.size() > maxAllowed) {
+                newUrls = newUrls.subList(0, maxAllowed);
+                log.info("URL 수 제한으로 {}개만 추가 - WebsiteId: {}", maxAllowed, event.websiteId().getId());
+            }
+
             // 새로운 CrawledUrl 엔티티들을 배치로 생성 및 저장
             List<CrawledUrl> crawledUrls = newUrls.stream()
                 .map(url -> CrawledUrl.discovered(event.websiteId(), url, event.parentUrl(), event.depth() + 1))
@@ -159,6 +176,13 @@ public class JobUpdatingConsumer {
 
             log.info("발견된 URL 배치 처리 완료 - WebsiteId: {}, 처리된 새 URL: {}/{}",
                     event.websiteId().getId(), newUrls.size(), event.urlCount());
+
+            // 크롤링 완료 체크: 새로운 URL이 없거나 maxTotalUrls 도달 시
+            if (newUrls.isEmpty() || currentTotal >= website.getCrawlConfig().maxTotalUrls()) {
+                checkAndMarkCrawlingComplete(event.websiteId());
+                log.info("크롤링 완료 조건 만족 - WebsiteId: {}, 현재 URL 수: {}, 최대: {}",
+                        event.websiteId().getId(), currentTotal, website.getCrawlConfig().maxTotalUrls());
+            }
 
             // 모든 처리 완료 후 마지막에 한 번만 acknowledge (메시지 처리 완료를 Kafka에 알림)
             acknowledgment.acknowledge();
@@ -202,5 +226,39 @@ public class JobUpdatingConsumer {
                 validUrls.size(), cacheFilteredUrls.size(), urlsToCheck.size() - existingInDb.size(), finalNewUrls.size());
 
         return finalNewUrls;
+    }
+
+    /**
+     * 크롤링 완료 여부 체크 및 Website 상태 변경
+     *
+     * 체크 조건:
+     * 1. 새로운 URL이 발견되지 않음 (더 이상 크롤링할 URL 없음)
+     * 2. Website가 아직 PROGRESS 상태
+     */
+    private void checkAndMarkCrawlingComplete(WebsiteId websiteId) {
+        try {
+            Website website = getWebsitePort.findById(websiteId)
+                    .orElse(null);
+
+            if (website == null) {
+                log.warn("크롤링 완료 체크 실패: Website not found - {}", websiteId.getId());
+                return;
+            }
+
+            // 이미 COMPLETE 또는 FAILED 상태면 스킵
+            if (website.isCompleted() || website.isFailed()) {
+                return;
+            }
+
+            // PROGRESS 상태면 COMPLETE로 변경
+            if (website.isInProgress()) {
+                Website completedWebsite = website.markCompleted();
+                saveWebsitePort.save(completedWebsite);
+                log.info("✅ 크롤링 완료! Website 상태를 COMPLETE로 변경 - WebsiteId: {}", websiteId.getId());
+            }
+
+        } catch (Exception e) {
+            log.error("크롤링 완료 체크 중 오류 발생 - WebsiteId: {}", websiteId.getId(), e);
+        }
     }
 }
