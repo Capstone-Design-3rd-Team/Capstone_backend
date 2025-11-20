@@ -11,9 +11,9 @@ import com.example.capstone_java.website.domain.event.UrlAnalysisRequestEvent;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import com.example.capstone_java.website.global.common.KafkaGroups;
 import com.example.capstone_java.website.global.common.KafkaTopics;
-import com.example.capstone_java.website.application.event.EventDispatcher;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.kafka.annotation.KafkaListener;
 import org.springframework.kafka.annotation.RetryableTopic;
 import org.springframework.kafka.support.Acknowledgment;
@@ -47,7 +47,7 @@ public class JobUpdatingConsumer {
     private final SaveCrawledUrlPort saveCrawledUrlPort;
     private final CrawlCachePort crawlCachePort;
     private final GetWebsitePort getWebsitePort;
-    private final EventDispatcher eventDispatcher;
+    private final ApplicationEventPublisher eventPublisher;
 
     @org.springframework.beans.factory.annotation.Value("${app.callback.base-url:http://localhost:8080}")
     private String callbackBaseUrl;
@@ -122,7 +122,7 @@ public class JobUpdatingConsumer {
             saveCrawledUrlPort.saveAll(crawledUrls);
             log.info("새로운 URL {} 개를 DB에 저장 완료", newUrls.size());
 
-            // 크롤링 이벤트들 생성 및 발행
+            // 크롤링 이벤트들 생성 및 발행 (트랜잭션 커밋 후 처리됨)
             List<UrlCrawlEvent> crawlEvents = newUrls.stream()
                 .map(url -> UrlCrawlEvent.createChildCrawl(
                     event.websiteId(),
@@ -133,7 +133,7 @@ public class JobUpdatingConsumer {
                 .collect(Collectors.toList());
 
             // 크롤링 이벤트 발행
-            crawlEvents.forEach(eventDispatcher::dispatch);
+            crawlEvents.forEach(eventPublisher::publishEvent);
 
             // AI 분석 이벤트들 생성 및 발행 (각 URL마다 AI 분석 요청)
             String callbackUrl = callbackBaseUrl + "/api/analysis/callback";
@@ -147,7 +147,7 @@ public class JobUpdatingConsumer {
                 .collect(Collectors.toList());
 
             // AI 분석 이벤트 발행
-            analysisEvents.forEach(eventDispatcher::dispatch);
+            analysisEvents.forEach(eventPublisher::publishEvent);
             log.info("AI 분석 요청 이벤트 {} 개 발행 완료", analysisEvents.size());
 
             log.info("발견된 URL 배치 처리 완료 - WebsiteId: {}, 처리된 새 URL: {}/{}",
@@ -195,43 +195,5 @@ public class JobUpdatingConsumer {
                 validUrls.size(), cacheFilteredUrls.size(), urlsToCheck.size() - existingInDb.size(), finalNewUrls.size());
 
         return finalNewUrls;
-    }
-
-    /**
-     * 새로운 크롤링 이벤트들을 배치로 발행
-     */
-    private void publishCrawlingEvents(DiscoveredUrlsEvent event, List<String> newUrls) {
-        int publishedCount = 0;
-
-        for (String url : newUrls) {
-            try {
-                UrlCrawlEvent crawlEvent = UrlCrawlEvent.createChildCrawl(
-                    event.websiteId(),
-                    url,
-                    event.parentUrl(),
-                    event.depth() + 1
-                );
-
-                eventDispatcher.dispatch(crawlEvent);
-                publishedCount++;
-
-            } catch (Exception e) {
-                log.warn("개별 크롤링 이벤트 발행 실패 - URL: {}, Error: {}", url, e.getMessage());
-            }
-        }
-
-        log.info("크롤링 이벤트 발행 완료 - 성공: {}/{}", publishedCount, newUrls.size());
-    }
-
-    /**
-     * URL 유효성 검사
-     */
-    private boolean isValidUrl(String url) {
-        if (url == null || url.trim().isEmpty()) {
-            return false;
-        }
-
-        // 기본적인 URL 형식 검사
-        return url.startsWith("http://") || url.startsWith("https://");
     }
 }

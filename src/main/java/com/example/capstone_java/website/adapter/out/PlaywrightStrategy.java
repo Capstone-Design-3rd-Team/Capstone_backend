@@ -195,13 +195,23 @@ public class PlaywrightStrategy implements CrawlStrategy {
         Page page = null;
 
         try {
-            // Context와 Page 생성
-            context = browser.newContext();
+            // Context와 Page 생성 (봇 감지 회피 설정)
+            context = browser.newContext(new Browser.NewContextOptions()
+                    .setUserAgent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36")
+                    .setViewportSize(1920, 1080)
+            );
             context.setDefaultTimeout(PAGE_LOAD_TIMEOUT_MS);
 
             page = context.newPage();
             page.setDefaultTimeout(PAGE_LOAD_TIMEOUT_MS);
             page.setDefaultNavigationTimeout(NAVIGATION_TIMEOUT_MS);
+
+            // navigator.webdriver 속성 제거 (가장 핵심적인 봇 감지 회피)
+            page.addInitScript("""
+                Object.defineProperty(navigator, 'webdriver', {
+                    get: () => undefined
+                });
+            """);
 
             log.debug("Playwright 네비게이션 시작: {}", url);
 
