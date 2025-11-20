@@ -43,6 +43,12 @@ public class FinalReportAdapter implements SaveFinalReportPort, GetFinalReportPo
         log.info("🔍 변환된 Map - websiteUrl: {}", reportJson.get("websiteUrl"));
         log.info("🔍 변환된 Map - averageScore: {}", reportJson.get("averageScore"));
 
+        // 기존 보고서가 있으면 삭제 (덮어쓰기)
+        finalReportRepository.findByWebsiteId(websiteId.getId()).ifPresent(existing -> {
+            log.info("🔄 기존 보고서 발견 - 삭제 후 재생성: existingId={}", existing.getId());
+            finalReportRepository.delete(existing);
+        });
+
         FinalReportEntity entity = FinalReportEntity.create(
                 websiteId.getId(),
                 reportJson,
