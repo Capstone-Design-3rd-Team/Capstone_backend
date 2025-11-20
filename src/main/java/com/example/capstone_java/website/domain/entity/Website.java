@@ -62,12 +62,20 @@ public final class Website {
         return new Website(this.websiteId, this.mainUrl, this.clientId, ExtractionStatus.PROGRESS, this.crawlConfig, this.createdAt);
     }
 
+    public Website markAnalyzing() {
+        return new Website(this.websiteId, this.mainUrl, this.clientId, ExtractionStatus.ANALYZING, this.crawlConfig, this.createdAt);
+    }
+
     public Website markCompleted() {
         return new Website(this.websiteId, this.mainUrl, this.clientId, ExtractionStatus.COMPLETE, this.crawlConfig, this.createdAt);
     }
 
     public Website markFailed() {
         return new Website(this.websiteId, this.mainUrl, this.clientId, ExtractionStatus.FAILED, this.crawlConfig, this.createdAt);
+    }
+
+    public boolean isAnalyzing() {
+        return extractionStatus == ExtractionStatus.ANALYZING;
     }
 
     public boolean isCompleted() {
