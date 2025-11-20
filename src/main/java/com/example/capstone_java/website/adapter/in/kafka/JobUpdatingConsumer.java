@@ -50,6 +50,7 @@ public class JobUpdatingConsumer {
     private final GetWebsitePort getWebsitePort;
     private final SaveWebsitePort saveWebsitePort;
     private final ApplicationEventPublisher eventPublisher;
+    private final com.example.capstone_java.website.application.service.AnalysisProgressService analysisProgressService;
 
     @org.springframework.beans.factory.annotation.Value("${app.callback.base-url:http://localhost:8080}")
     private String callbackBaseUrl;
@@ -257,6 +258,9 @@ public class JobUpdatingConsumer {
                 Website completedWebsite = website.markCompleted();
                 saveWebsitePort.save(completedWebsite);
                 log.info("✅ 크롤링 완료! Website 상태를 COMPLETE로 변경 - WebsiteId: {}", websiteId.getId());
+
+                // SSE로 상태 변경 알림 (CRAWLING → ANALYZING)
+                analysisProgressService.checkProgressAndNotify(websiteId);
             }
 
         } catch (Exception e) {
