@@ -49,3 +49,4 @@ mongodb_data/
 redis_data/
 
 /docs/*
+log/*

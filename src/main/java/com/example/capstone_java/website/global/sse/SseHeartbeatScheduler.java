@@ -4,9 +4,10 @@ import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
-import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
-import java.io.IOException;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Set;
 
 /**
  * SSE 하트비트 전송
@@ -25,13 +26,20 @@ public class SseHeartbeatScheduler {
      */
     @Scheduled(fixedRate = 45000)
     public void sendHeartbeat() {
-        sseEmitters.getAll().forEach((clientId, emitter) -> {
-            try {
-                emitter.send(SseEmitter.event().name("heartbeat").data("ping"));
-            } catch (IOException e) {
-                log.debug("하트비트 실패, 연결 제거: {}", clientId);
-                sseEmitters.complete(clientId);
+        Set<String> clientIds = sseEmitters.getAllClientIds();
+        List<String> failedClients = new ArrayList<>();
+
+        // 1단계: 하트비트 전송 및 실패한 클라이언트 수집
+        for (String clientId : clientIds) {
+            if (!sseEmitters.sendHeartbeat(clientId)) {
+                failedClients.add(clientId);
             }
-        });
+        }
+
+        // 2단계: 실패한 연결들을 안전하게 제거
+        if (!failedClients.isEmpty()) {
+            log.debug("하트비트 실패한 연결 제거: {} 개", failedClients.size());
+            failedClients.forEach(sseEmitters::complete);
+        }
     }
 }

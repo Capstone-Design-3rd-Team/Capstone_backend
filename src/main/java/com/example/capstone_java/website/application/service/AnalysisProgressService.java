@@ -5,6 +5,7 @@ import com.example.capstone_java.website.adapter.in.dto.SseProgressDto;
 import com.example.capstone_java.website.application.port.out.GetAccessibilityReportPort;
 import com.example.capstone_java.website.application.port.out.GetCrawledUrlPort;
 import com.example.capstone_java.website.application.port.out.GetWebsitePort;
+import com.example.capstone_java.website.application.port.out.SaveWebsitePort;
 import com.example.capstone_java.website.domain.entity.AccessibilityReport;
 import com.example.capstone_java.website.domain.entity.Website;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
@@ -35,6 +36,7 @@ public class AnalysisProgressService {
     private final GetWebsitePort getWebsitePort;
     private final GetCrawledUrlPort getCrawledUrlPort;
     private final GetAccessibilityReportPort getAccessibilityReportPort;
+    private final SaveWebsitePort saveWebsitePort;
     private final ReportGenerationService reportGenerationService;
     private final SseEmitters sseEmitters;
 
@@ -123,7 +125,22 @@ public class AnalysisProgressService {
      */
     private void sendFinalReport(String clientId, WebsiteId websiteId, Website website) {
         try {
-            // 1. 완료 진행 상황 전송
+            // 1. 모든 분석 결과 조회
+            List<AccessibilityReport> reports = getAccessibilityReportPort.findAllByWebsiteId(websiteId);
+
+            // 2. 최종 보고서 생성
+            FinalReportDto finalReport = reportGenerationService.generateFinalReport(
+                    website.getMainUrl(),
+                    clientId,
+                    reports);
+
+            // 3. Website 상태를 COMPLETE로 변경 및 저장 (SSE 전송 전에 먼저 저장!)
+            Website completedWebsite = website.markCompleted();
+            saveWebsitePort.save(completedWebsite);
+
+            log.info("Website 상태 COMPLETE로 변경 완료: websiteId={}", websiteId.getId());
+
+            // 4. 완료 진행 상황 전송 (DB 저장 후!)
             SseProgressDto completedProgress = SseProgressDto.builder()
                     .stage("COMPLETED")
                     .percentage(100)
@@ -132,22 +149,13 @@ public class AnalysisProgressService {
 
             sseEmitters.send(clientId, completedProgress, "progress");
 
-            // 2. 모든 분석 결과 조회
-            List<AccessibilityReport> reports = getAccessibilityReportPort.findAllByWebsiteId(websiteId);
-
-            // 3. 최종 보고서 생성
-            FinalReportDto finalReport = reportGenerationService.generateFinalReport(
-                    website.getMainUrl(),
-                    clientId,
-                    reports);
-
-            // 4. 최종 보고서 전송
+            // 5. 최종 보고서 전송
             sseEmitters.send(clientId, finalReport, "complete");
 
             log.info("최종 보고서 전송 완료: clientId={}, urls={}, score={}",
                     clientId, reports.size(), finalReport.getAverageScore());
 
-            // 5. SSE 연결 종료
+            // 6. SSE 연결 종료
             sseEmitters.complete(clientId);
             lastSentPercentage.remove(clientId);
 

@@ -286,6 +286,7 @@ public class PlaywrightConfig {
         BrowserType.LaunchOptions options = new BrowserType.LaunchOptions()
                 .setHeadless(true)
                 .setArgs(List.of(
+                        "--disable-blink-features=AutomationControlled",  // 봇 감지 회피 (가장 중요!)
                         "--disable-gpu",
                         "--no-sandbox",
                         "--disable-dev-shm-usage",

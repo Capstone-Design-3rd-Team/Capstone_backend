@@ -5,7 +5,9 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.io.IOException;
+import java.util.Collections;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 
 /**
@@ -60,8 +62,12 @@ public class SseEmitters {
     public void complete(String clientId) {
         SseEmitter emitter = emitters.remove(clientId);
         if (emitter != null) {
-            emitter.complete();
-            log.info("SSE 연결 종료: {}", clientId);
+            try {
+                emitter.complete();
+                log.info("SSE 연결 종료: {}", clientId);
+            } catch (Exception e) {
+                log.debug("SSE 연결 종료 중 예외 (이미 끊긴 연결): clientId={}, error={}", clientId, e.getMessage());
+            }
         }
     }
 
@@ -74,9 +80,29 @@ public class SseEmitters {
     }
 
     /**
-     * 모든 연결 조회 (하트비트용)
+     * 모든 clientId 조회 (하트비트용)
+     * 실제 맵 대신 불변 Set을 반환하여 안전성 보장
      */
-    public Map<String, SseEmitter> getAll() {
-        return emitters;
+    public Set<String> getAllClientIds() {
+        return Collections.unmodifiableSet(emitters.keySet());
+    }
+
+    /**
+     * 특정 clientId에 하트비트 전송 (하트비트 스케줄러 전용)
+     * @return 성공 여부
+     */
+    public boolean sendHeartbeat(String clientId) {
+        SseEmitter emitter = emitters.get(clientId);
+        if (emitter == null) {
+            return false;
+        }
+
+        try {
+            emitter.send(SseEmitter.event().name("heartbeat").data("ping"));
+            return true;
+        } catch (IOException e) {
+            log.debug("하트비트 전송 실패: {}", clientId);
+            return false;
+        }
     }
 }
