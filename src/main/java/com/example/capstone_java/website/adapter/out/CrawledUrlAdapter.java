@@ -5,6 +5,7 @@ import com.example.capstone_java.website.adapter.out.persistence.entity.CrawledU
 import com.example.capstone_java.website.adapter.out.persistence.repository.CrawledUrlJpaRepository;
 import com.example.capstone_java.website.application.port.out.GetCrawledUrlPort;
 import com.example.capstone_java.website.application.port.out.SaveCrawledUrlPort;
+import com.example.capstone_java.website.domain.entity.CrawlStatus;
 import com.example.capstone_java.website.domain.entity.CrawledUrl;
 import com.example.capstone_java.website.domain.vo.WebsiteId;
 import lombok.RequiredArgsConstructor;
@@ -77,5 +78,11 @@ public class CrawledUrlAdapter implements SaveCrawledUrlPort, GetCrawledUrlPort 
     @Override
     public long countByWebsiteId(WebsiteId websiteId) {
         return crawledUrlRepository.countByWebsiteId(websiteId.getId());
+    }
+
+    // [추가] 실패한 URL 개수 카운트 구현
+    @Override
+    public long countFailedByWebsiteId(WebsiteId websiteId) {
+        return crawledUrlRepository.countByWebsiteIdAndStatus(websiteId.getId(), CrawlStatus.FAILED);
     }
 }

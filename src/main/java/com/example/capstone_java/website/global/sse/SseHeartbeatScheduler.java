@@ -18,28 +18,26 @@ import java.util.Set;
 @Component
 @RequiredArgsConstructor
 public class SseHeartbeatScheduler {
-
     private final SseEmitters sseEmitters;
 
     /**
      * 45초마다 하트비트 전송 (AWS LB 60초 타임아웃 방지)
+     * 병렬 처리(parallelStream)를 통해 많은 연결도 빠르게 처리
      */
     @Scheduled(fixedRate = 45000)
     public void sendHeartbeat() {
         Set<String> clientIds = sseEmitters.getAllClientIds();
-        List<String> failedClients = new ArrayList<>();
 
-        // 1단계: 하트비트 전송 및 실패한 클라이언트 수집
-        for (String clientId : clientIds) {
-            if (!sseEmitters.sendHeartbeat(clientId)) {
-                failedClients.add(clientId);
+        if (clientIds.isEmpty()) return;
+
+        // [수정] parallelStream()을 사용하여 병렬로 빠르게 전송
+        // (기존에는 순차적으로 보내서 연결이 많아지면 느려질 수 있었음)
+        clientIds.parallelStream().forEach(clientId -> {
+            boolean success = sseEmitters.sendHeartbeat(clientId);
+            if (!success) {
+                log.debug("하트비트 실패, 연결 제거: {}", clientId);
+                sseEmitters.complete(clientId);
             }
-        }
-
-        // 2단계: 실패한 연결들을 안전하게 제거
-        if (!failedClients.isEmpty()) {
-            log.debug("하트비트 실패한 연결 제거: {} 개", failedClients.size());
-            failedClients.forEach(sseEmitters::complete);
-        }
+        });
     }
 }

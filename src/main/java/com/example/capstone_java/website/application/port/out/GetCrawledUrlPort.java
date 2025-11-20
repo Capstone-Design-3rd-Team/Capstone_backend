@@ -11,4 +11,7 @@ public interface GetCrawledUrlPort {
      * WebsiteId로 크롤링된 URL 개수 조회
      */
     long countByWebsiteId(WebsiteId websiteId);
+
+    // [추가] 실패한 URL 개수 조회
+    long countFailedByWebsiteId(WebsiteId websiteId);
 }
