@@ -157,8 +157,8 @@ public class JobUpdatingConsumer {
             saveCrawledUrlPort.saveAll(crawledUrls);
             log.info("새로운 URL {} 개를 DB에 저장 완료", newUrls.size());
 
-            // SSE로 크롤링 진행 상황 실시간 알림 (CRAWLING 단계에서 개수 업데이트)
-            analysisProgressService.checkProgressAndNotify(event.websiteId());
+            // SSE로 크롤링 진행 상황 실시간 알림 (저장된 개수 전송)
+            analysisProgressService.notifyCrawlingProgress(event.websiteId());
 
             // 크롤링 이벤트들 생성 및 발행 (트랜잭션 커밋 후 처리됨)
             List<UrlCrawlEvent> crawlEvents = newUrls.stream()
@@ -266,14 +266,14 @@ public class JobUpdatingConsumer {
                 return;
             }
 
-            // PROGRESS 상태면 COMPLETE로 변경
+            // PROGRESS 상태면 ANALYZING으로 변경 (크롤링 완료, AI 분석 시작)
             if (website.isInProgress()) {
-                Website completedWebsite = website.markCompleted();
-                saveWebsitePort.save(completedWebsite);
-                log.info("✅ 크롤링 완료! Website 상태를 COMPLETE로 변경 - WebsiteId: {}", websiteId.getId());
+                Website analyzingWebsite = website.markAnalyzing();
+                saveWebsitePort.save(analyzingWebsite);
+                log.info("✅ 크롤링 완료! Website 상태를 ANALYZING으로 변경 - WebsiteId: {}", websiteId.getId());
 
-                // SSE로 상태 변경 알림 (CRAWLING → ANALYZING)
-                analysisProgressService.checkProgressAndNotify(websiteId);
+                // SSE로 ANALYZING 단계 시작 알림 (CRAWLING → ANALYZING)
+                analysisProgressService.notifyCrawlingCompleted(websiteId);
             }
 
         } catch (Exception e) {

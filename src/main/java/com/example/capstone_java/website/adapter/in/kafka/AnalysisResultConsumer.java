@@ -115,8 +115,8 @@ public class AnalysisResultConsumer {
             log.info("AI 분석 결과 저장 완료 - Report ID: {}, WebsiteId: {}, URL: {}, Score: {}",
                     savedReport.getId(), websiteId.getId(), savedReport.getUrl(), savedReport.getAccessibilityScore());
 
-            // 진행 상황 체크 및 SSE 전송
-            analysisProgressService.checkProgressAndNotify(websiteId);
+            // AI 분석 진행 상황 SSE 전송 (퍼센트 업데이트)
+            analysisProgressService.notifyAnalysisProgress(websiteId);
 
             // 저장 성공 후 메시지 처리 완료
             acknowledgment.acknowledge();
