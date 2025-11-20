@@ -94,6 +94,8 @@ public class JobUpdatingConsumer {
             if (!website.canCrawlAtDepth(event.depth() + 1)) {
                 log.info("최대 크롤링 깊이 도달. 처리 중단 - WebsiteId: {}, Depth: {}",
                         event.websiteId().getId(), event.depth());
+                checkAndMarkCrawlingComplete(event.websiteId());
+                acknowledgment.acknowledge();
                 return;
             }
 
@@ -102,6 +104,8 @@ public class JobUpdatingConsumer {
             if (website.hasReachedCrawlLimits(currentTotalUrls)) {
                 log.info("크롤링 URL 수 제한 도달. 처리 중단 - WebsiteId: {}, 현재 URL 수: {}, 최대: {}",
                         event.websiteId().getId(), currentTotalUrls, website.getCrawlConfig().maxTotalUrls());
+                checkAndMarkCrawlingComplete(event.websiteId());
+                acknowledgment.acknowledge();
                 return;
             }
 
@@ -110,6 +114,8 @@ public class JobUpdatingConsumer {
             if (elapsed.compareTo(website.getCrawlConfig().maxDuration()) > 0) {
                 log.info("크롤링 시간 제한 도달. 처리 중단 - WebsiteId: {}, 경과 시간: {} 분, 최대: {} 분",
                         event.websiteId().getId(), elapsed.toMinutes(), website.getCrawlConfig().maxDuration().toMinutes());
+                checkAndMarkCrawlingComplete(event.websiteId());
+                acknowledgment.acknowledge();
                 return;
             }
 
@@ -121,6 +127,8 @@ public class JobUpdatingConsumer {
 
             if (newUrls.isEmpty()) {
                 log.info("모든 URL이 이미 발견됨. 새로운 작업 없음 - WebsiteId: {}", event.websiteId().getId());
+                checkAndMarkCrawlingComplete(event.websiteId());
+                acknowledgment.acknowledge();
                 return;
             }
 
@@ -131,6 +139,8 @@ public class JobUpdatingConsumer {
             if (maxAllowed <= 0) {
                 log.info("URL 수 제한 도달. 추가 중단 - WebsiteId: {}, 현재: {}, 최대: {}",
                         event.websiteId().getId(), currentTotal, website.getCrawlConfig().maxTotalUrls());
+                checkAndMarkCrawlingComplete(event.websiteId());
+                acknowledgment.acknowledge();
                 return;
             }
 
@@ -146,6 +156,9 @@ public class JobUpdatingConsumer {
 
             saveCrawledUrlPort.saveAll(crawledUrls);
             log.info("새로운 URL {} 개를 DB에 저장 완료", newUrls.size());
+
+            // SSE로 크롤링 진행 상황 실시간 알림 (CRAWLING 단계에서 개수 업데이트)
+            analysisProgressService.checkProgressAndNotify(event.websiteId());
 
             // 크롤링 이벤트들 생성 및 발행 (트랜잭션 커밋 후 처리됨)
             List<UrlCrawlEvent> crawlEvents = newUrls.stream()
