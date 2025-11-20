@@ -26,7 +26,15 @@ public class ReportGenerationService {
      * AccessibilityReport로부터 URL별 상세 보고서 생성
      */
     public UrlDetailReportDto generateUrlDetailReport(AccessibilityReport report) {
-        Map<String, Object> results = report.getAnalysisResult();
+        log.debug("🔍 개별 URL 보고서 생성: url={}, score={}", report.getUrl(), report.getAccessibilityScore());
+
+        // AI 응답 구조: { "task_id": ..., "website_id": ..., "results": { ... } }
+        Map<String, Object> analysisResult = report.getAnalysisResult();
+        log.debug("🔍 analysisResult 최상위 키: {}", analysisResult.keySet());
+
+        // "results" 키 안에 실제 분석 결과가 있음
+        Map<String, Object> results = getMap(analysisResult, "results");
+        log.debug("🔍 results 키: {}", results.keySet());
 
         // 기본 정보 추출
         Map<String, Object> analysisInfo = getMap(results, "analysis_info");
@@ -34,6 +42,14 @@ public class ReportGenerationService {
         Map<String, Object> buttonAnalysis = getMap(results, "button_analysis");
         Map<String, Object> detailedScores = getMap(results, "detailed_scores");
         Map<String, Object> summary = getMap(results, "summary");
+
+        log.debug("🔍 추출된 값 - url: {}, analysisDate: {}, s3Url: {}",
+            getString(analysisInfo, "url"),
+            getString(analysisInfo, "analysis_date"),
+            getString(analysisInfo, "s3_url"));
+        log.debug("🔍 추출된 값 - crawledButtonCount: {}, detectedButtonCount: {}",
+            getInteger(buttonAnalysis, "crawled_button_count"),
+            getInteger(buttonAnalysis, "detected_button_count"));
 
         // 상세 점수 추출
         UrlDetailReportDto.DetailScoreDto buttonDetection = extractDetailScore(detailedScores, "button_detection");
@@ -69,7 +85,7 @@ public class ReportGenerationService {
                 .fontSize(fontSize)
                 .overallContrast(overallContrast)
                 .koreanRatio(koreanRatio)
-                .finalScore(getDouble(summary, "final_score"))
+                .finalScore(report.getAccessibilityScore() != null ? report.getAccessibilityScore() : 0.0)  // 🔥 엔티티에서 직접 가져옴
                 .accessibilityLevel(getString(summary, "accessibility_level"))
                 .severityLevel(getString(summary, "severity_level"))
                 .textReport(textReport)
@@ -252,25 +268,47 @@ public class ReportGenerationService {
     }
 
     private Double getDouble(Map<String, Object> map, String key) {
+        if (map == null) return 0.0;
         Object value = map.get(key);
+
         if (value instanceof Number) {
             return ((Number) value).doubleValue();
+        } else if (value instanceof String) {
+            try {
+                return Double.parseDouble((String) value);
+            } catch (NumberFormatException e) {
+                log.warn("Double 파싱 실패: key={}, value={}", key, value);
+                return 0.0;
+            }
         }
         return 0.0;
     }
 
     private Integer getInteger(Map<String, Object> map, String key) {
+        if (map == null) return 0;
         Object value = map.get(key);
+
         if (value instanceof Number) {
             return ((Number) value).intValue();
+        } else if (value instanceof String) {
+            try {
+                return Integer.parseInt((String) value);
+            } catch (NumberFormatException e) {
+                log.warn("Integer 파싱 실패: key={}, value={}", key, value);
+                return 0;
+            }
         }
         return 0;
     }
 
     private Boolean getBoolean(Map<String, Object> map, String key) {
+        if (map == null) return false;
         Object value = map.get(key);
+
         if (value instanceof Boolean) {
             return (Boolean) value;
+        } else if (value instanceof String) {
+            return Boolean.parseBoolean((String) value);
         }
         return false;
     }
