@@ -18,9 +18,9 @@ public record CrawlConfiguration(
 
     public static CrawlConfiguration defaultConfiguration() {
         return new CrawlConfiguration(
-                5,                                    // maxDepth (3 -> 5로 증가)
+                5,                                    // maxDepth
                 5000,                                // maxTotalUrls
-                100,                                 // maxUrlsPerPage (50 -> 100으로 증가)
+                100,                                 // maxUrlsPerPage (LMS는 메뉴가 많아 100개로 설정)
                 Duration.ofHours(1),                 // maxDuration
                 Set.of(),                            // allowedPaths (모든 경로 허용)
                 Set.of("/admin/", "/api/", "/login/") // excludedPaths
