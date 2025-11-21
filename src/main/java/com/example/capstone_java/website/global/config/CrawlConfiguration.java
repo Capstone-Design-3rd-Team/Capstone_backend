@@ -17,25 +17,15 @@ public record CrawlConfiguration(
 ) {
 
     public static CrawlConfiguration defaultConfiguration() {
-        // ===== 테스트 설정 (10개 URL만 크롤링) =====
+        // ===== 운영 설정 =====
         return new CrawlConfiguration(
-                2,                                    // maxDepth (2로 설정: depth 0, 1까지 크롤링 가능)
-                10,                                  // maxTotalUrls (10개로 제한)
-                10,                                  // maxUrlsPerPage (10개로 제한)
-                Duration.ofHours(1),                 // maxDuration
-                Set.of(),                            // allowedPaths (모든 경로 허용)
+                5,                                    // maxDepth
+                2000,                                 // maxTotalUrls (2000개로 설정)
+                100,                                  // maxUrlsPerPage
+                Duration.ofHours(2),                  // maxDuration (2시간)
+                Set.of(),                             // allowedPaths (모든 경로 허용)
                 Set.of("/admin/", "/api/", "/login/") // excludedPaths
         );
-
-        // ===== 운영 설정 (원래 설정 - 주석 처리) =====
-        // return new CrawlConfiguration(
-        //         5,                                    // maxDepth
-        //         5000,                                // maxTotalUrls
-        //         100,                                 // maxUrlsPerPage (LMS는 메뉴가 많아 100개로 설정)
-        //         Duration.ofHours(1),                 // maxDuration
-        //         Set.of(),                            // allowedPaths (모든 경로 허용)
-        //         Set.of("/admin/", "/api/", "/login/") // excludedPaths
-        // );
     }
 
     public static CrawlConfiguration create(int maxDepth, int maxTotalUrls) {
